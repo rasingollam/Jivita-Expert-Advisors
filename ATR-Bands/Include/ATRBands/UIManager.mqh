@@ -45,6 +45,10 @@ private:
     int m_currentPanelHeight;
     bool m_panelInitialized;
     
+    // Add minimized state tracking
+    bool m_isPanelMinimized;
+    int m_titleBarHeight;
+    
     // Add object to panel tracking array
     void AddPanelObject(string objName) {
         m_panelObjectCount++;
@@ -179,12 +183,12 @@ private:
         int newHeight = MathMax(contentHeight, minHeight);
         
         // Only update if height has changed
-        if (newHeight != m_currentPanelHeight) {
+        if(newHeight != m_currentPanelHeight) {
             m_currentPanelHeight = newHeight;
             
-            // Update the background rectangle
+            // Update the background rectangle (only if not minimized)
             string objName = PANEL_NAME + "_BG";
-            if (ObjectFind(0, objName) >= 0) {
+            if(ObjectFind(0, objName) >= 0 && !m_isPanelMinimized) {
                 ObjectSetInteger(0, objName, OBJPROP_YSIZE, m_currentPanelHeight);
             }
         }
@@ -194,6 +198,10 @@ private:
     void CreatePanelStructure() {
         // Remove any existing panel
         RemoveAllPanelObjects();
+        
+        // Initialize minimized state
+        m_isPanelMinimized = false;
+        m_titleBarHeight = PANEL_PADDING * 2 + 25; // Height of title bar
         
         // Create main panel background - height will be updated later
         string objName = PANEL_NAME + "_BG";
@@ -219,6 +227,25 @@ private:
         
         // Add panel title
         CreatePanelLabel(PANEL_NAME + "_Title", PANEL_TITLE, PANEL_X + PANEL_PADDING, PANEL_Y + PANEL_PADDING, 14, TITLE_COLOR, true);
+        
+        // Add minimize button - positioned at right side of title bar
+        string btnName = PANEL_NAME + "_MinimizeBtn";
+        int btnSize = 16;
+        int btnX = PANEL_X + PANEL_WIDTH - PANEL_PADDING - btnSize;
+        int btnY = PANEL_Y + PANEL_PADDING;
+        
+        ObjectCreate(0, btnName, OBJ_BUTTON, 0, 0, 0);
+        ObjectSetInteger(0, btnName, OBJPROP_XDISTANCE, btnX);
+        ObjectSetInteger(0, btnName, OBJPROP_YDISTANCE, btnY);
+        ObjectSetInteger(0, btnName, OBJPROP_XSIZE, btnSize);
+        ObjectSetInteger(0, btnName, OBJPROP_YSIZE, btnSize);
+        ObjectSetInteger(0, btnName, OBJPROP_BGCOLOR, PANEL_BACKGROUND_COLOR);
+        ObjectSetInteger(0, btnName, OBJPROP_BORDER_COLOR, TITLE_COLOR);
+        ObjectSetInteger(0, btnName, OBJPROP_COLOR, TITLE_COLOR);
+        ObjectSetString(0, btnName, OBJPROP_TEXT, "-");
+        ObjectSetInteger(0, btnName, OBJPROP_FONTSIZE, 12);
+        ObjectSetInteger(0, btnName, OBJPROP_SELECTABLE, false);
+        AddPanelObject(btnName);
         
         // Add divider line below title
         CreatePanelLine(PANEL_NAME + "_TitleLine", 
@@ -273,6 +300,60 @@ private:
         CreateInfoLabelPair("Cumulative Closed Profit", "0.00", y);
         CreateInfoLabelPair("Total Profit", "0.00", y);
         CreateInfoLabelPair("Total Completed Trades", "0", y);
+    }
+    
+    // Toggle panel minimized state
+    void ToggleMinimizedState() {
+        m_isPanelMinimized = !m_isPanelMinimized;
+        
+        // Change button text based on state
+        string btnName = PANEL_NAME + "_MinimizeBtn";
+        if(ObjectFind(0, btnName) >= 0) {
+            ObjectSetString(0, btnName, OBJPROP_TEXT, m_isPanelMinimized ? "+" : "-");
+        }
+        
+        // Update panel height based on minimized state
+        UpdatePanelBasedOnMinimizedState();
+        
+        // Force chart redraw
+        ChartRedraw();
+    }
+    
+    // Update panel height based on minimized state
+    void UpdatePanelBasedOnMinimizedState() {
+        string objName = PANEL_NAME + "_BG";
+        
+        if(m_isPanelMinimized) {
+            // Set panel to just show title bar
+            ObjectSetInteger(0, objName, OBJPROP_YSIZE, m_titleBarHeight);
+            
+            // Hide all content objects
+            HidePanelContentObjects(true);
+        } else {
+            // Restore full panel height
+            ObjectSetInteger(0, objName, OBJPROP_YSIZE, m_currentPanelHeight);
+            
+            // Show all content objects
+            HidePanelContentObjects(false);
+        }
+    }
+    
+    // Hide or show all panel content objects (except title bar elements)
+    void HidePanelContentObjects(bool hide) {
+        for(int i = 0; i < m_panelObjectCount; i++) {
+            string objName = m_panelObjects[i];
+            
+            // Skip title bar objects
+            if(StringFind(objName, PANEL_NAME + "_Title") >= 0 || 
+               StringFind(objName, PANEL_NAME + "_MinimizeBtn") >= 0 ||
+               objName == PANEL_NAME + "_BG") {
+                continue;
+            }
+            
+            if(ObjectFind(0, objName) >= 0) {
+                ObjectSetInteger(0, objName, OBJPROP_TIMEFRAMES, hide ? OBJ_NO_PERIODS : OBJ_ALL_PERIODS);
+            }
+        }
     }
     
     // Update position section display
@@ -527,6 +608,8 @@ public:
         m_panelObjectCount = 0;
         m_currentPanelHeight = PANEL_HEIGHT_INITIAL;
         m_panelInitialized = false;
+        m_isPanelMinimized = false;
+        m_titleBarHeight = PANEL_PADDING * 2 + 25; // Height of title bar
     }
     
     // Destructor
@@ -570,6 +653,24 @@ public:
         ChartRedraw();
     }
     
+    // Handle chart events - need to add this to detect button clicks
+    bool ProcessChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam) {
+        // Handle button clicks
+        if(id == CHARTEVENT_OBJECT_CLICK) {
+            // Check if our minimize button was clicked
+            if(sparam == PANEL_NAME + "_MinimizeBtn") {
+                ToggleMinimized();
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    // Public method to toggle minimized state - can be called from OnChartEvent
+    void ToggleMinimized() {
+        ToggleMinimizedState();
+    }
+    
     // Update the UI
     void Update() {
         // Skip all UI operations in strategy tester
@@ -578,13 +679,15 @@ public:
         }
         
         // Make sure panel is initialized
-        if (!m_panelInitialized) {
+        if(!m_panelInitialized) {
             CreatePanelStructure();
             m_panelInitialized = true;
         }
         
-        // Update content
-        UpdatePanelContent();
+        // Update content - only if panel is not minimized
+        if(!m_isPanelMinimized) {
+            UpdatePanelContent();
+        }
         
         // Force chart redraw
         ChartRedraw();

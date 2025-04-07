@@ -141,6 +141,11 @@ int OnInit()
       }
    }
    
+   // Enable chart events for UI interaction
+   ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, 1);
+   ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, 1);
+   ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, 1);
+   
    Print("===== ATR BANDS EA INITIALIZATION COMPLETE =====");
    return INIT_SUCCEEDED;
 }
@@ -314,5 +319,24 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    // Pass transaction event to trade manager
    if (tradeManager != NULL) {
       tradeManager.OnTradeTransaction(trans, request, result);
+   }
+}
+
+//+------------------------------------------------------------------+
+//| ChartEvent function                                              |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, 
+                  const long &lparam, 
+                  const double &dparam, 
+                  const string &sparam)
+{
+   // Pass chart events to UI manager for button handling
+   if(uiManager != NULL && !MQLInfoInteger(MQL_TESTER)) {
+      // Check if this is a button click event
+      if(id == CHARTEVENT_OBJECT_CLICK && 
+         StringFind(sparam, "ATRPanel_MinimizeBtn") >= 0) {
+         // Handle the button click in the UI manager
+         uiManager.ToggleMinimized();
+      }
    }
 }
