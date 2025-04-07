@@ -49,6 +49,15 @@ private:
     bool m_isPanelMinimized;
     int m_titleBarHeight;
     
+    // Panel position variables - added to fix compilation errors
+    int m_panelX;
+    int m_panelY;
+    
+    // Panel dragging related variables
+    bool m_isDragging;
+    int m_dragStartX;
+    int m_dragStartY;
+    
     // Add object to panel tracking array
     void AddPanelObject(string objName) {
         m_panelObjectCount++;
@@ -113,7 +122,7 @@ private:
         string labelName = PANEL_NAME + "_" + title;
         ObjectCreate(0, labelName, OBJ_LABEL, 0, 0, 0);
         ObjectSetInteger(0, labelName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-        ObjectSetInteger(0, labelName, OBJPROP_XDISTANCE, PANEL_X + PANEL_PADDING);
+        ObjectSetInteger(0, labelName, OBJPROP_XDISTANCE, m_panelX + PANEL_PADDING);
         ObjectSetInteger(0, labelName, OBJPROP_YDISTANCE, y);
         ObjectSetInteger(0, labelName, OBJPROP_COLOR, HEADER_COLOR);
         ObjectSetInteger(0, labelName, OBJPROP_FONTSIZE, 10);
@@ -127,9 +136,9 @@ private:
         // Create the divider line
         string lineName = PANEL_NAME + "_" + title + "_Line";
         CreatePanelLine(lineName, 
-                       PANEL_X + PANEL_PADDING, 
+                       m_panelX + PANEL_PADDING, 
                        y, 
-                       PANEL_X + PANEL_WIDTH - PANEL_PADDING, 
+                       m_panelX + PANEL_WIDTH - PANEL_PADDING, 
                        y, 
                        HEADER_COLOR);
         
@@ -142,7 +151,7 @@ private:
         string labelName = PANEL_NAME + "_Label_" + label;
         ObjectCreate(0, labelName, OBJ_LABEL, 0, 0, 0);
         ObjectSetInteger(0, labelName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-        ObjectSetInteger(0, labelName, OBJPROP_XDISTANCE, PANEL_X + PANEL_PADDING);
+        ObjectSetInteger(0, labelName, OBJPROP_XDISTANCE, m_panelX + PANEL_PADDING);
         ObjectSetInteger(0, labelName, OBJPROP_YDISTANCE, y);
         ObjectSetInteger(0, labelName, OBJPROP_COLOR, TEXT_COLOR);
         ObjectSetInteger(0, labelName, OBJPROP_FONTSIZE, 9);
@@ -155,7 +164,7 @@ private:
         string valueName = PANEL_NAME + "_Value_" + label;
         ObjectCreate(0, valueName, OBJ_LABEL, 0, 0, 0);
         ObjectSetInteger(0, valueName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-        ObjectSetInteger(0, valueName, OBJPROP_XDISTANCE, PANEL_X + PANEL_PADDING + 150);
+        ObjectSetInteger(0, valueName, OBJPROP_XDISTANCE, m_panelX + PANEL_PADDING + 150);
         ObjectSetInteger(0, valueName, OBJPROP_YDISTANCE, y);
         ObjectSetInteger(0, valueName, OBJPROP_COLOR, TEXT_COLOR);
         ObjectSetInteger(0, valueName, OBJPROP_FONTSIZE, 9);
@@ -207,8 +216,8 @@ private:
         string objName = PANEL_NAME + "_BG";
         ObjectCreate(0, objName, OBJ_RECTANGLE_LABEL, 0, 0, 0);
         ObjectSetInteger(0, objName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-        ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, PANEL_X);
-        ObjectSetInteger(0, objName, OBJPROP_YDISTANCE, PANEL_Y);
+        ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, m_panelX);
+        ObjectSetInteger(0, objName, OBJPROP_YDISTANCE, m_panelY);
         ObjectSetInteger(0, objName, OBJPROP_XSIZE, PANEL_WIDTH);
         ObjectSetInteger(0, objName, OBJPROP_YSIZE, m_currentPanelHeight);
         ObjectSetInteger(0, objName, OBJPROP_BGCOLOR, PANEL_BACKGROUND_COLOR);
@@ -226,13 +235,13 @@ private:
         AddPanelObject(objName);
         
         // Add panel title
-        CreatePanelLabel(PANEL_NAME + "_Title", PANEL_TITLE, PANEL_X + PANEL_PADDING, PANEL_Y + PANEL_PADDING, 14, TITLE_COLOR, true);
+        CreatePanelLabel(PANEL_NAME + "_Title", PANEL_TITLE, m_panelX + PANEL_PADDING, m_panelY + PANEL_PADDING, 14, TITLE_COLOR, true);
         
         // Add minimize button - positioned at right side of title bar
         string btnName = PANEL_NAME + "_MinimizeBtn";
         int btnSize = 16;
-        int btnX = PANEL_X + PANEL_WIDTH - PANEL_PADDING - btnSize;
-        int btnY = PANEL_Y + PANEL_PADDING;
+        int btnX = m_panelX + PANEL_WIDTH - PANEL_PADDING - btnSize;
+        int btnY = m_panelY + PANEL_PADDING;
         
         ObjectCreate(0, btnName, OBJ_BUTTON, 0, 0, 0);
         ObjectSetInteger(0, btnName, OBJPROP_XDISTANCE, btnX);
@@ -249,14 +258,14 @@ private:
         
         // Add divider line below title
         CreatePanelLine(PANEL_NAME + "_TitleLine", 
-                      PANEL_X + PANEL_PADDING, 
-                      PANEL_Y + PANEL_PADDING + 25, 
-                      PANEL_X + PANEL_WIDTH - PANEL_PADDING, 
-                      PANEL_Y + PANEL_PADDING + 25, 
+                      m_panelX + PANEL_PADDING, 
+                      m_panelY + PANEL_PADDING + 25, 
+                      m_panelX + PANEL_WIDTH - PANEL_PADDING, 
+                      m_panelY + PANEL_PADDING + 25, 
                       HEADER_COLOR);
         
         // Starting Y position for content (after title)
-        int y = PANEL_Y + PANEL_PADDING + 30;
+        int y = m_panelY + PANEL_PADDING + 30;
         
         // Create section headers and labels for all sections
         
@@ -426,7 +435,7 @@ private:
                     string posTypeLabel = PANEL_NAME + "_Pos" + IntegerToString(posCount) + "_Type";
                     ObjectCreate(0, posTypeLabel, OBJ_LABEL, 0, 0, 0);
                     ObjectSetInteger(0, posTypeLabel, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-                    ObjectSetInteger(0, posTypeLabel, OBJPROP_XDISTANCE, PANEL_X + PANEL_PADDING);
+                    ObjectSetInteger(0, posTypeLabel, OBJPROP_XDISTANCE, m_panelX + PANEL_PADDING);
                     ObjectSetInteger(0, posTypeLabel, OBJPROP_YDISTANCE, y);
                     ObjectSetInteger(0, posTypeLabel, OBJPROP_COLOR, posColor);
                     ObjectSetInteger(0, posTypeLabel, OBJPROP_FONTSIZE, 9);
@@ -551,7 +560,7 @@ private:
                       IntegerToString(m_tradeManager.GetTotalTrades()));
                       
         // Calculate where static content ends
-        int contentEndY = PANEL_Y + PANEL_PADDING + 30;  // Start after title
+        int contentEndY = m_panelY + PANEL_PADDING + 30;  // Start after title
         
         // Skip through sections - this must match layout in CreatePanelStructure
         // ATR Information Section (header + 5 items)
@@ -580,7 +589,38 @@ private:
         contentEndY += PANEL_PADDING * 2;
         
         // Update panel height
-        UpdatePanelHeight(contentEndY - PANEL_Y);
+        UpdatePanelHeight(contentEndY - m_panelY);
+    }
+    
+    // Update all panel objects' positions when panel is moved
+    void UpdatePanelPosition(int newX, int newY) {
+        int deltaX = newX - m_panelX;
+        int deltaY = newY - m_panelY;
+        
+        // Update all panel objects
+        for(int i = 0; i < m_panelObjectCount; i++) {
+            string objName = m_panelObjects[i];
+            if(ObjectFind(0, objName) >= 0) {
+                int xDistance = (int)ObjectGetInteger(0, objName, OBJPROP_XDISTANCE);
+                int yDistance = (int)ObjectGetInteger(0, objName, OBJPROP_YDISTANCE);
+                
+                ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, xDistance + deltaX);
+                ObjectSetInteger(0, objName, OBJPROP_YDISTANCE, yDistance + deltaY);
+            }
+        }
+        
+        // Update the panel position variables
+        m_panelX = newX;
+        m_panelY = newY;
+        
+        // Force chart redraw
+        ChartRedraw();
+    }
+    
+    // Check if mouse is over panel title bar
+    bool IsMouseOverTitleBar(int x, int y) {
+        return (x >= m_panelX && x <= m_panelX + PANEL_WIDTH &&
+                y >= m_panelY && y <= m_panelY + m_titleBarHeight);
     }
     
     // Create visual signal on chart - fixed arrowCode type
@@ -610,6 +650,15 @@ public:
         m_panelInitialized = false;
         m_isPanelMinimized = false;
         m_titleBarHeight = PANEL_PADDING * 2 + 25; // Height of title bar
+        
+        // Initialize panel position
+        m_panelX = 20;  // Default X position
+        m_panelY = 20;  // Default Y position
+        
+        // Initialize dragging variables
+        m_isDragging = false;
+        m_dragStartX = 0;
+        m_dragStartY = 0;
     }
     
     // Destructor
@@ -663,6 +712,44 @@ public:
                 return true;
             }
         }
+        
+        // Handle mouse events for panel dragging
+        if(id == CHARTEVENT_MOUSE_MOVE) {
+            // Convert mouse coordinates
+            int x = (int)lparam;
+            int y = (int)dparam;
+            
+            // Get mouse button state - fix boolean expression issue
+            bool leftButtonPressed = ((int)sparam & 1) != 0;
+            
+            // Handle mouse move with left button pressed (dragging)
+            if(leftButtonPressed) { 
+                if(m_isDragging) {
+                    // Calculate the new panel position
+                    int newX = m_panelX + (x - m_dragStartX);
+                    int newY = m_panelY + (y - m_dragStartY);
+                    
+                    // Update panel position
+                    UpdatePanelPosition(newX, newY);
+                    return true;
+                } 
+                else if(IsMouseOverTitleBar(x, y)) {
+                    // Start dragging
+                    m_isDragging = true;
+                    m_dragStartX = x;
+                    m_dragStartY = y;
+                    return true;
+                }
+            }
+            else {
+                // Mouse button released - end dragging
+                if(m_isDragging) {
+                    m_isDragging = false;
+                    return true;
+                }
+            }
+        }
+        
         return false;
     }
     

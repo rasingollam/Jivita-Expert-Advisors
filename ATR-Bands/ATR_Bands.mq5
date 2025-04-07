@@ -142,9 +142,10 @@ int OnInit()
    }
    
    // Enable chart events for UI interaction
-   ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, 1);
-   ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, 1);
-   ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, 1);
+   // Fixed function parameters - ChartSetInteger requires chart_id, property_id, property_value
+   ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, true);
+   ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
+   ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, true);
    
    Print("===== ATR BANDS EA INITIALIZATION COMPLETE =====");
    return INIT_SUCCEEDED;
@@ -330,13 +331,8 @@ void OnChartEvent(const int id,
                   const double &dparam, 
                   const string &sparam)
 {
-   // Pass chart events to UI manager for button handling
+   // Pass all chart events to UI manager for handling button clicks and dragging
    if(uiManager != NULL && !MQLInfoInteger(MQL_TESTER)) {
-      // Check if this is a button click event
-      if(id == CHARTEVENT_OBJECT_CLICK && 
-         StringFind(sparam, "ATRPanel_MinimizeBtn") >= 0) {
-         // Handle the button click in the UI manager
-         uiManager.ToggleMinimized();
-      }
+      uiManager.ProcessChartEvent(id, lparam, dparam, sparam);
    }
 }
