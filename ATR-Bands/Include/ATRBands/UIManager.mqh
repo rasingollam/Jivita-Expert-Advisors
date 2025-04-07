@@ -58,6 +58,10 @@ private:
     int m_dragStartX;
     int m_dragStartY;
     
+    // Add performance tracking variables
+    datetime m_lastUpdateTime;
+    bool m_needsFullRedraw;
+    
     // Add object to panel tracking array
     void AddPanelObject(string objName) {
         m_panelObjectCount++;
@@ -203,14 +207,18 @@ private:
         }
     }
     
-    // Create the panel structure
+    // Create the panel structure with optimized object creation
     void CreatePanelStructure() {
+        // Start performance optimization - disable chart redraws during bulk creation
+        ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, false);
+        
         // Remove any existing panel
         RemoveAllPanelObjects();
         
         // Initialize minimized state
         m_isPanelMinimized = false;
         m_titleBarHeight = PANEL_PADDING * 2 + 25; // Height of title bar
+        m_needsFullRedraw = true;
         
         // Create main panel background - height will be updated later
         string objName = PANEL_NAME + "_BG";
@@ -309,9 +317,15 @@ private:
         CreateInfoLabelPair("Cumulative Closed Profit", "0.00", y);
         CreateInfoLabelPair("Total Profit", "0.00", y);
         CreateInfoLabelPair("Total Completed Trades", "0", y);
+        
+        // Re-enable chart object creation events
+        ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
+        
+        // Force a single redraw at the end
+        ChartRedraw();
     }
     
-    // Toggle panel minimized state
+    // Toggle panel minimized state with optimized rendering
     void ToggleMinimizedState() {
         m_isPanelMinimized = !m_isPanelMinimized;
         
@@ -321,30 +335,49 @@ private:
             ObjectSetString(0, btnName, OBJPROP_TEXT, m_isPanelMinimized ? "+" : "-");
         }
         
+        // Temporarily disable object create events for faster handling
+        ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, false);
+        
         // Update panel height based on minimized state
-        UpdatePanelBasedOnMinimizedState();
-        
-        // Force chart redraw
-        ChartRedraw();
-    }
-    
-    // Update panel height based on minimized state
-    void UpdatePanelBasedOnMinimizedState() {
         string objName = PANEL_NAME + "_BG";
-        
         if(m_isPanelMinimized) {
             // Set panel to just show title bar
             ObjectSetInteger(0, objName, OBJPROP_YSIZE, m_titleBarHeight);
             
-            // Hide all content objects
-            HidePanelContentObjects(true);
+            // Use a more efficient way to hide objects - hide all at once
+            for(int i = 0; i < m_panelObjectCount; i++) {
+                string name = m_panelObjects[i];
+                
+                // Skip title bar objects
+                if(StringFind(name, PANEL_NAME + "_Title") >= 0 || 
+                   StringFind(name, PANEL_NAME + "_MinimizeBtn") >= 0 ||
+                   name == PANEL_NAME + "_BG" ||
+                   name == PANEL_NAME + "_TitleLine") {
+                    continue;
+                }
+                
+                if(ObjectFind(0, name) >= 0) {
+                    ObjectSetInteger(0, name, OBJPROP_TIMEFRAMES, OBJ_NO_PERIODS);
+                }
+            }
         } else {
             // Restore full panel height
             ObjectSetInteger(0, objName, OBJPROP_YSIZE, m_currentPanelHeight);
             
-            // Show all content objects
-            HidePanelContentObjects(false);
+            // Show all objects at once
+            for(int i = 0; i < m_panelObjectCount; i++) {
+                string name = m_panelObjects[i];
+                if(ObjectFind(0, name) >= 0) {
+                    ObjectSetInteger(0, name, OBJPROP_TIMEFRAMES, OBJ_ALL_PERIODS);
+                }
+            }
         }
+        
+        // Re-enable object creation events
+        ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
+        
+        // Force a single redraw
+        ChartRedraw();
     }
     
     // Hide or show all panel content objects (except title bar elements)
@@ -469,9 +502,18 @@ private:
         }
     }
     
-    // Update panel content with current information
+    // Update panel content with current information - optimized
     void UpdatePanelContent() {
         if (!m_panelInitialized) return;
+        
+        // Skip frequent updates - limit to once per 250ms
+        if(TimeCurrent() - m_lastUpdateTime < 0.25 && !m_needsFullRedraw) return;
+        
+        m_lastUpdateTime = TimeCurrent();
+        m_needsFullRedraw = false;
+        
+        // Temporarily disable object create events for faster handling
+        ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, false);
         
         // Get current values
         double atrValue = m_atrIndicator.GetCurrentATR();
@@ -590,14 +632,23 @@ private:
         
         // Update panel height
         UpdatePanelHeight(contentEndY - m_panelY);
+        
+        // Re-enable object creation events
+        ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
+        
+        // Force a single redraw at the end instead of multiple redraws
+        ChartRedraw();
     }
     
-    // Update all panel objects' positions when panel is moved
+    // Update all panel objects' positions when panel is moved - optimized
     void UpdatePanelPosition(int newX, int newY) {
         int deltaX = newX - m_panelX;
         int deltaY = newY - m_panelY;
         
-        // Update all panel objects
+        // Disable object create events temporarily for better performance
+        ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, false);
+        
+        // Update all panel objects in a batch
         for(int i = 0; i < m_panelObjectCount; i++) {
             string objName = m_panelObjects[i];
             if(ObjectFind(0, objName) >= 0) {
@@ -613,7 +664,10 @@ private:
         m_panelX = newX;
         m_panelY = newY;
         
-        // Force chart redraw
+        // Re-enable object creation events
+        ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
+        
+        // Force a single redraw
         ChartRedraw();
     }
     
@@ -659,6 +713,10 @@ public:
         m_isDragging = false;
         m_dragStartX = 0;
         m_dragStartY = 0;
+        
+        // Initialize performance tracking variables
+        m_lastUpdateTime = 0;
+        m_needsFullRedraw = true;
     }
     
     // Destructor
@@ -666,7 +724,7 @@ public:
         Cleanup();
     }
     
-    // Initialize the UI
+    // Initialize the UI with optimized object creation
     bool Initialize() {
         if (m_settings == NULL || m_atrIndicator == NULL || 
             m_signalDetector == NULL || m_tradeManager == NULL) {
@@ -677,7 +735,10 @@ public:
         // Don't create UI in optimization mode
         if (m_settings.isOptimization) return true;
         
-        // Create panel structure
+        // Pre-allocate object array to reduce reallocations
+        ArrayResize(m_panelObjects, 100);
+        
+        // Create panel structure with optimized object handling
         CreatePanelStructure();
         m_panelInitialized = true;
         
@@ -687,19 +748,25 @@ public:
     // Clean up all UI elements
     void Cleanup() {
         if (m_panelInitialized) {
+            // Disable object create events temporarily for better performance during cleanup
+            ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, false);
+            
             RemoveAllPanelObjects();
             m_panelInitialized = false;
+            
+            // Also ensure all drawings are removed
+            ObjectsDeleteAll(0, "ATRBand_");    // Remove all ATR band lines
+            ObjectsDeleteAll(0, "ATRSignal_");  // Remove all signal markers
+            
+            // Re-enable object creation events
+            ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
+            
+            // Clear chart comment
+            Comment("");
+            
+            // Force chart redraw
+            ChartRedraw();
         }
-        
-        // Also ensure all drawings are removed
-        ObjectsDeleteAll(0, "ATRBand_");    // Remove all ATR band lines
-        ObjectsDeleteAll(0, "ATRSignal_");  // Remove all signal markers
-        
-        // Clear chart comment
-        Comment("");
-        
-        // Force chart redraw
-        ChartRedraw();
     }
     
     // Handle chart events - need to add this to detect button clicks
@@ -758,7 +825,7 @@ public:
         ToggleMinimizedState();
     }
     
-    // Update the UI
+    // Update the UI with throttling to prevent excessive updates
     void Update() {
         // Skip all UI operations in strategy tester
         if(MQLInfoInteger(MQL_TESTER) || m_settings.isOptimization) {
@@ -769,14 +836,12 @@ public:
         if(!m_panelInitialized) {
             CreatePanelStructure();
             m_panelInitialized = true;
+            m_needsFullRedraw = true;
         }
         
-        // Update content - only if panel is not minimized
+        // Update content - only if panel is not minimized and needs updating
         if(!m_isPanelMinimized) {
             UpdatePanelContent();
         }
-        
-        // Force chart redraw
-        ChartRedraw();
     }
 };
