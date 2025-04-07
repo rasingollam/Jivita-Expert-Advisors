@@ -33,63 +33,89 @@ private:
         }
     }
     
-    // Draw ATR bands on chart
+    // Draw ATR bands on chart - matched exactly to reference implementation
     void DrawBands(int count) {
         if (m_settings.isOptimization) return;
         
-        // Iterate through points to draw band segments
+        // Delete previous bands before drawing new ones
+        DeleteBandObjects();
+        
+        // Iterate through points to draw band segments - matching reference implementation
         for (int i = 0; i < count-2 && !IsStopped(); i++) {
-            // Calculate bands for each point
+            // For each position, use the ATR and close from previous candle
             double prev_atr1 = m_atrValues[i+1];
             double prev_close1 = m_closeValues[i+1];
             double prev_atr2 = m_atrValues[i+2];
             double prev_close2 = m_closeValues[i+2];
             
+            // Store values for most recent bar - exactly like reference
+            if (i == 0) {
+                m_currentATR = prev_atr1;
+                m_currentUpperBand = prev_close1 + (prev_atr1 * m_settings.atrMultiplier);
+                m_currentLowerBand = prev_close1 - (prev_atr1 * m_settings.atrMultiplier);
+                
+                if(m_settings.testMode) {
+                    Print("Current bar ATR = ", DoubleToString(m_currentATR, 5), 
+                          ", Upper = ", DoubleToString(m_currentUpperBand, 5),
+                          ", Lower = ", DoubleToString(m_currentLowerBand, 5));
+                }
+            }
+            
+            // Calculate band values for current and next point - exact match to reference
             double upper_band1 = prev_close1 + (prev_atr1 * m_settings.atrMultiplier);
             double lower_band1 = prev_close1 - (prev_atr1 * m_settings.atrMultiplier);
             double upper_band2 = prev_close2 + (prev_atr2 * m_settings.atrMultiplier);
             double lower_band2 = prev_close2 - (prev_atr2 * m_settings.atrMultiplier);
             
-            // Create upper band segment
+            // Create upper band segment - exactly like reference
             string upper_name = "ATRBand_Upper_" + IntegerToString(i);
-            if (ObjectCreate(0, upper_name, OBJ_TREND, 0, m_timeValues[i], upper_band1, m_timeValues[i+1], upper_band2)) {
-                ObjectSetInteger(0, upper_name, OBJPROP_COLOR, m_settings.upperBandColor);
-                ObjectSetInteger(0, upper_name, OBJPROP_STYLE, STYLE_SOLID);
-                ObjectSetInteger(0, upper_name, OBJPROP_WIDTH, m_settings.lineWidth);
-                ObjectSetInteger(0, upper_name, OBJPROP_RAY_RIGHT, false);
-                ObjectSetInteger(0, upper_name, OBJPROP_RAY_LEFT, false);
+            if (!ObjectCreate(0, upper_name, OBJ_TREND, 0, m_timeValues[i+1], upper_band1, m_timeValues[i+2], upper_band2)) {
+                Print("Failed to create upper band line: ", GetLastError());
+                continue;
             }
             
-            // Create lower band segment
+            // Set upper band line properties - exactly like reference
+            ObjectSetInteger(0, upper_name, OBJPROP_COLOR, m_settings.upperBandColor);
+            ObjectSetInteger(0, upper_name, OBJPROP_STYLE, STYLE_SOLID);
+            ObjectSetInteger(0, upper_name, OBJPROP_WIDTH, m_settings.lineWidth);
+            ObjectSetInteger(0, upper_name, OBJPROP_RAY_RIGHT, false);
+            ObjectSetInteger(0, upper_name, OBJPROP_RAY_LEFT, false);
+            
+            // Create lower band segment - exactly like reference
             string lower_name = "ATRBand_Lower_" + IntegerToString(i);
-            if (ObjectCreate(0, lower_name, OBJ_TREND, 0, m_timeValues[i], lower_band1, m_timeValues[i+1], lower_band2)) {
-                ObjectSetInteger(0, lower_name, OBJPROP_COLOR, m_settings.lowerBandColor);
-                ObjectSetInteger(0, lower_name, OBJPROP_STYLE, STYLE_SOLID);
-                ObjectSetInteger(0, lower_name, OBJPROP_WIDTH, m_settings.lineWidth);
-                ObjectSetInteger(0, lower_name, OBJPROP_RAY_RIGHT, false);
-                ObjectSetInteger(0, lower_name, OBJPROP_RAY_LEFT, false);
+            if (!ObjectCreate(0, lower_name, OBJ_TREND, 0, m_timeValues[i+1], lower_band1, m_timeValues[i+2], lower_band2)) {
+                Print("Failed to create lower band line: ", GetLastError());
+                continue;
             }
+            
+            // Set lower band line properties - exactly like reference
+            ObjectSetInteger(0, lower_name, OBJPROP_COLOR, m_settings.lowerBandColor);
+            ObjectSetInteger(0, lower_name, OBJPROP_STYLE, STYLE_SOLID);
+            ObjectSetInteger(0, lower_name, OBJPROP_WIDTH, m_settings.lineWidth);
+            ObjectSetInteger(0, lower_name, OBJPROP_RAY_RIGHT, false);
+            ObjectSetInteger(0, lower_name, OBJPROP_RAY_LEFT, false);
         }
         
-        // Display ATR value as a label
-        if (!m_settings.isOptimization) {
-            string atr_label = "ATRBand_Value";
-            string atr_text = "ATR(" + IntegerToString(m_settings.atrPeriod) + "): " + 
-                             DoubleToString(m_atrValues[1], _Digits);
-            
-            if (ObjectFind(0, atr_label) < 0) {
-                // Create new label
-                ObjectCreate(0, atr_label, OBJ_LABEL, 0, 0, 0);
-                ObjectSetInteger(0, atr_label, OBJPROP_CORNER, CORNER_RIGHT_UPPER);
-                ObjectSetInteger(0, atr_label, OBJPROP_XDISTANCE, 10);
-                ObjectSetInteger(0, atr_label, OBJPROP_YDISTANCE, 10);
-            }
-            
-            // Update label text
-            ObjectSetString(0, atr_label, OBJPROP_TEXT, atr_text);
-            ObjectSetInteger(0, atr_label, OBJPROP_COLOR, clrWhite);
-            ObjectSetInteger(0, atr_label, OBJPROP_FONTSIZE, 10);
+        // Display ATR value as a label - exact match to reference
+        string atr_label = "ATRBand_Value";
+        string atr_text = "ATR(" + IntegerToString(m_settings.atrPeriod) + "): " + 
+                         DoubleToString(m_atrValues[1], _Digits);
+        
+        if (ObjectFind(0, atr_label) < 0) {
+            // Create new label
+            ObjectCreate(0, atr_label, OBJ_LABEL, 0, 0, 0);
+            ObjectSetInteger(0, atr_label, OBJPROP_CORNER, CORNER_RIGHT_UPPER);
+            ObjectSetInteger(0, atr_label, OBJPROP_XDISTANCE, 10);
+            ObjectSetInteger(0, atr_label, OBJPROP_YDISTANCE, 10);
         }
+        
+        // Update label text
+        ObjectSetString(0, atr_label, OBJPROP_TEXT, atr_text);
+        ObjectSetInteger(0, atr_label, OBJPROP_COLOR, clrWhite);
+        ObjectSetInteger(0, atr_label, OBJPROP_FONTSIZE, 10);
+        
+        // Force chart redraw
+        ChartRedraw();
     }
     
 public:
@@ -159,7 +185,7 @@ public:
         }
     }
     
-    // Calculate ATR bands and update values
+    // Calculate ATR bands and update values - aligned with reference implementation
     bool Calculate(int barsCount = 5) {
         // Ensure handle is valid
         if (m_atrHandle == INVALID_HANDLE) {
@@ -173,11 +199,8 @@ public:
             Print("Successfully reinitialized ATR indicator");
         }
         
-        // Remove previous lines
-        DeleteBandObjects();
-        
-        // Use more conservative data count for testing
-        int dataCount = MathMin(barsCount + 1, 100); // Limit to 100 bars to avoid issues
+        // Use conservative data count for testing - like reference EA
+        int dataCount = MathMin(barsCount + 2, 100);
         
         // Resize arrays more efficiently
         if (ArraySize(m_atrValues) < dataCount) ArrayResize(m_atrValues, dataCount);
@@ -186,22 +209,31 @@ public:
         if (ArraySize(m_lowValues) < dataCount) ArrayResize(m_lowValues, dataCount);
         if (ArraySize(m_timeValues) < dataCount) ArrayResize(m_timeValues, dataCount);
         
-        // Copy indicator data with error checking
+        // Copy indicator data with error checking - exactly like reference
         int copied = CopyBuffer(m_atrHandle, 0, 0, dataCount, m_atrValues);
         if (copied <= 0) {
             Print("Failed to copy ATR values: ", GetLastError());
             return false;
         }
         
-        // Combine all copy operations with single error check for efficiency
-        bool copySuccess = 
-            CopyClose(_Symbol, _Period, 0, dataCount, m_closeValues) > 0 &&
-            CopyHigh(_Symbol, _Period, 0, dataCount, m_highValues) > 0 &&
-            CopyLow(_Symbol, _Period, 0, dataCount, m_lowValues) > 0 &&
-            CopyTime(_Symbol, _Period, 0, dataCount, m_timeValues) > 0;
-            
-        if (!copySuccess) {
-            Print("Failed to copy price data: ", GetLastError());
+        // Combine all copy operations with single error check - like reference
+        if(CopyClose(_Symbol, _Period, 0, dataCount, m_closeValues) <= 0) {
+            Print("Failed to copy close prices: ", GetLastError());
+            return false;
+        }
+        
+        if(CopyHigh(_Symbol, _Period, 0, dataCount, m_highValues) <= 0) {
+            Print("Failed to copy high prices: ", GetLastError());
+            return false;
+        }
+        
+        if(CopyLow(_Symbol, _Period, 0, dataCount, m_lowValues) <= 0) {
+            Print("Failed to copy low prices: ", GetLastError());
+            return false;
+        }
+        
+        if(CopyTime(_Symbol, _Period, 0, dataCount, m_timeValues) <= 0) {
+            Print("Failed to copy time values: ", GetLastError());
             return false;
         }
         
@@ -212,21 +244,13 @@ public:
             return false;
         }
         
-        // More robust error handling for zero or negative ATR values
-        if (m_atrValues[1] <= 0) {
-            Print("Warning: Invalid ATR value detected: ", m_atrValues[1], " at bar time: ", 
-                  TimeToString(m_timeValues[1]), " - Using minimum value");
-            m_atrValues[1] = 0.0001; // Use a minimal non-zero value
+        // Draw bands on the chart if not in optimization mode - like reference
+        if (!m_settings.isOptimization) {
+            DrawBands(dataCount);
         }
         
-        // Store current values for the most recent bar (index 1 because index 0 is the current forming bar)
-        m_currentATR = m_atrValues[1];
-        m_currentUpperBand = m_closeValues[1] + (m_currentATR * m_settings.atrMultiplier);
-        m_currentLowerBand = m_closeValues[1] - (m_currentATR * m_settings.atrMultiplier);
-        
-        // Draw bands on the chart
-        if (!m_settings.isOptimization) {
-            DrawBands(barsCount);
+        if(m_settings.testMode) {
+            Print("ATR calculation complete - Current ATR: ", DoubleToString(m_currentATR, 5));
         }
         
         return true;

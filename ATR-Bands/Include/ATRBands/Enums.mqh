@@ -4,7 +4,7 @@
 //|                                           by Malinda Rasingolla  |
 //+------------------------------------------------------------------+
 
-// Define enum for signal types
+// Define enum for signal types - EXACT MATCH to reference ATR.mq5
 enum ENUM_SIGNAL_TYPE {
    SIGNAL_TYPE_BREAKOUT = 0,    // Trade only breakout signals
    SIGNAL_TYPE_TOUCH = 1,       // Trade only touch signals
@@ -26,7 +26,7 @@ string SignalTypeToString(ENUM_SIGNAL_TYPE type) {
    }
 }
 
-// Structure to hold signal information
+// Structure to hold signal information - formatted to hold same data as reference
 struct SignalInfo {
    bool hasSignal;              // Whether a signal exists
    bool isBuySignal;            // True for buy, false for sell

@@ -91,13 +91,14 @@ int OnInit()
    Print("Attempting to initialize settings with parameters...");
    Print("ATR_Period:", ATR_Period, " ATR_Multiplier:", ATR_Multiplier);
    
+   // Update the settings.Initialize call to include TestMode
    if(!settings.Initialize(ATR_Period, ATR_Multiplier, Price, 
                            UpperBandColor, LowerBandColor, LineWidth, 
                            SignalType, SignalSize, BuySignalColor, SellSignalColor, 
                            BuyTouchColor, SellTouchColor, EnableTrading, 
                            RiskRewardRatio, RiskPercentage, StopLossPips, 
                            UseTakeProfit, MagicNumber, TargetProfitPercent, 
-                           StopLossPercent, isOptimization)) {
+                           StopLossPercent, isOptimization, TestMode)) {
       Print("Failed to initialize settings - check above for detailed error");
       return INIT_FAILED;
    }
@@ -243,57 +244,67 @@ void OnTick()
       Print("Test mode: Trading forcibly enabled");
    }
    
-   // Use a try-catch pattern to prevent processing errors from crashing EA
-   bool processingError = false;
-   
    // Check if trade manager needs to update profit limits
-   if(!processingError) {
-      tradeManager.CheckProfitLimits();
-   }
+   tradeManager.CheckProfitLimits();
    
-   // Detect new bar
+   // Only update on new bars - exactly like reference implementation
    bool newBar = IsNewBar();
    
-   // Add detailed logging in test mode
-   if(TestMode && newBar) {
-      Print("Bar details - Open: ", DoubleToString(iOpen(_Symbol, _Period, 1), _Digits),
-            ", High: ", DoubleToString(iHigh(_Symbol, _Period, 1), _Digits),
-            ", Low: ", DoubleToString(iLow(_Symbol, _Period, 1), _Digits),
-            ", Close: ", DoubleToString(iClose(_Symbol, _Period, 1), _Digits));
-            
-      Print("ATR value: ", DoubleToString(atrIndicator.GetCurrentATR(), _Digits),
-            ", Upper band: ", DoubleToString(atrIndicator.GetUpperBand(), _Digits),
-            ", Lower band: ", DoubleToString(atrIndicator.GetLowerBand(), _Digits));
-   }
-   
-   // Update ATR bands and check for signals on new bar
-   if(newBar && !processingError) {
+   // Process on new bar only - just like reference implementation
+   if(newBar) {
       if(TestMode) Print("Processing new bar at: ", TimeToString(lastBarTime));
       
       // Calculate ATR bands
       if(!atrIndicator.Calculate()) {
          Print("ERROR: ATR calculation failed at bar time: ", TimeToString(lastBarTime));
-         processingError = true;
+         return;
       }
       
-      // Only proceed if ATR calculation was successful
-      if(!processingError) {
-         // Look for signals
-         SignalInfo signal = signalDetector.DetectSignals();
-         
-         // Execute trades based on signals if enabled
-         if(signal.hasSignal && tradeManager.CanTrade()) {
+      // Log current ATR values for verification
+      if(TestMode) {
+         Print("ATR value: ", DoubleToString(atrIndicator.GetCurrentATR(), _Digits),
+               ", Upper band: ", DoubleToString(atrIndicator.GetUpperBand(), _Digits),
+               ", Lower band: ", DoubleToString(atrIndicator.GetLowerBand(), _Digits));
+         Print("Signal type setting: ", SignalTypeToString(SignalType), " (", SignalType, ")");
+      }
+      
+      // Look for signals - with enhanced error logging
+      SignalInfo signal = signalDetector.DetectSignals();
+      
+      // Log detected signal
+      if(signal.hasSignal && TestMode) {
+         Print("Detected signal: ", signal.signalType, 
+               ", Direction: ", (signal.isBuySignal ? "BUY" : "SELL"));
+      }
+      
+      // Execute trades based on signals with clear logging
+      if(signal.hasSignal) {
+         if(tradeManager.CanTrade()) {
+            Print("Executing trade for detected signal: ", signal.signalType);
             if(signal.isBuySignal) {
-               tradeManager.ExecuteBuy(signal.signalType);
+               if(tradeManager.ExecuteBuy(signal.signalType)) {
+                  Print("Buy trade executed successfully");
+               } else {
+                  Print("Buy trade execution failed");
+               }
             } else {
-               tradeManager.ExecuteSell(signal.signalType);
+               if(tradeManager.ExecuteSell(signal.signalType)) {
+                  Print("Sell trade executed successfully");
+               } else {
+                  Print("Sell trade execution failed");
+               }
             }
+         } else {
+            Print("Signal detected but trading not allowed - Trading state: ", 
+                  (settings.targetReached ? "Target Reached" : 
+                   settings.stopLossReached ? "Stop Loss Reached" : 
+                   !settings.tradingEnabled ? "Trading Disabled" : "Unknown"));
          }
       }
    }
    
    // Update UI if not in optimization mode and UI exists
-   if(uiManager != NULL && !processingError) {
+   if(uiManager != NULL && !settings.isOptimization) {
       uiManager.Update();
    }
 }

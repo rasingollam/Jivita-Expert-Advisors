@@ -46,6 +46,7 @@ public:
     bool tradingEnabled;
     bool targetReached;
     bool stopLossReached;
+    bool testMode;         // Add test mode flag
     
     // Constructor
     EASettings() {
@@ -53,6 +54,7 @@ public:
         tradingEnabled = true;
         targetReached = false;
         stopLossReached = false;
+        testMode = false;  // Default to false
     }
     
     // Improved initialization with validation and better error handling
@@ -62,7 +64,7 @@ public:
                     color p_buyTColor, color p_sellTColor, bool p_enableTrade,
                     double p_rrRatio, double p_riskPct, int p_slPips,
                     bool p_useTP, int p_magic, double p_targetProfit, double p_stopLossPct,
-                    bool p_isOptimize) 
+                    bool p_isOptimize, bool p_testMode = false)  // Add test mode parameter
     {
         // Detailed validation with specific error messages and auto-corrections for tester mode
         bool isTester = MQLInfoInteger(MQL_TESTER);
@@ -198,6 +200,7 @@ public:
         this.tradingEnabled = p_enableTrade;
         this.targetReached = false;
         this.stopLossReached = false;
+        this.testMode = p_testMode;  // Set test mode flag
         
         Print("EASettings initialized successfully with ATR multiplier: ", this.atrMultiplier);
         return true;
