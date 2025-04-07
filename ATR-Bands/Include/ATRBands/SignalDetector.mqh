@@ -21,43 +21,40 @@ private:
     SignalInfo m_currentSignal;
     bool m_lastSignalProcessed;
     
-    // Improved signal arrow creation for better visibility
+    // Improved signal arrow creation with better placement - removed text labels
     void CreateSignalArrow(int i, string signalType, bool isBuy, double price, color arrowColor) {
         if (m_settings.isOptimization) return;
         
         string signal_name = "ATRSignal_" + signalType + (isBuy ? "Buy_" : "Sell_") + IntegerToString(i);
         ENUM_OBJECT arrowCode = isBuy ? OBJ_ARROW_BUY : OBJ_ARROW_SELL;
         
-        // Adjust signal position for better visibility
+        // When creating arrows, use a better vertical offset to make them more visible
         double arrowPrice = price;
-        double vertOffset = 15 * _Point;  // Increased offset for better visibility
         
-        // Place arrow with more spacing from price
+        // Adjust arrow placement for better visibility
         if(isBuy) {
-            arrowPrice = price - vertOffset; // Buy below the price
+            // Buy arrow (place below the price with a gap)
+            arrowPrice = price - (10 * _Point);
         } else {
-            arrowPrice = price + vertOffset; // Sell above the price
+            // Sell arrow (place above the price with a gap)
+            arrowPrice = price + (10 * _Point);
         }
         
         if (ObjectCreate(0, signal_name, arrowCode, 0, m_atrIndicator.GetTime(i), arrowPrice)) {
             ObjectSetInteger(0, signal_name, OBJPROP_COLOR, arrowColor);
-            ObjectSetInteger(0, signal_name, OBJPROP_WIDTH, 3); // Larger size for better visibility
+            ObjectSetInteger(0, signal_name, OBJPROP_WIDTH, 2); // Use fixed width for better visibility
             ObjectSetInteger(0, signal_name, OBJPROP_ANCHOR, isBuy ? ANCHOR_TOP : ANCHOR_BOTTOM);
             
-            // Add a text label for extra clarity
-            string label_name = "ATRSignal_Label_" + IntegerToString(i);
-            if (ObjectCreate(0, label_name, OBJ_TEXT, 0, m_atrIndicator.GetTime(i), arrowPrice + (isBuy ? -vertOffset : vertOffset))) {
-                ObjectSetString(0, label_name, OBJPROP_TEXT, isBuy ? "TOUCH BUY" : "TOUCH SELL");
-                ObjectSetInteger(0, label_name, OBJPROP_COLOR, arrowColor);
-                ObjectSetInteger(0, label_name, OBJPROP_FONTSIZE, 8);
-            }
+            // Removed text label creation code
         }
     }
     
-    // Delete existing signal objects
+    // Delete existing signal objects - update to also delete any existing labels
     void DeleteSignalObjects() {
         if (!m_settings.isOptimization) {
             ObjectsDeleteAll(0, "ATRSignal_");
+            // Also clean up any lingering label objects
+            ObjectsDeleteAll(0, "ATRSignal_Label_");
         }
     }
     
