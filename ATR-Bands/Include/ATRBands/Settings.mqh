@@ -82,13 +82,13 @@ public:
             }
         }
         
-        // --- Handle ATR Multiplier ---
-        if(p_atrMultiplier <= 0) {
+        // --- Handle ATR Multiplier --- MODIFIED TO ALLOW ZERO
+        if(p_atrMultiplier < 0) {  // Changed from <= 0 to < 0 to allow zero
             if(isTester) {
                 p_atrMultiplier = 1.0;  // Default fallback value for tester
                 Print("Warning: Invalid ATR multiplier, using default value: ", p_atrMultiplier);
             } else {
-                errorMsg = StringFormat("Invalid ATR multiplier: %.2f, must be > 0", p_atrMultiplier);
+                errorMsg = StringFormat("Invalid ATR multiplier: %.2f, must be >= 0", p_atrMultiplier); // Changed error message
                 Print(errorMsg);
                 return false;
             }

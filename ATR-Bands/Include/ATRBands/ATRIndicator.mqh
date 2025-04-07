@@ -33,73 +33,87 @@ private:
         }
     }
     
-    // Draw ATR bands on chart - matched exactly to reference implementation
+    // Draw ATR bands on chart - simplified to draw horizontal lines for last candle's ATR
     void DrawBands(int count) {
         if (m_settings.isOptimization) return;
         
         // Delete previous bands before drawing new ones
         DeleteBandObjects();
         
-        // Iterate through points to draw band segments - matching reference implementation
-        for (int i = 0; i < count-2 && !IsStopped(); i++) {
-            // For each position, use the ATR and close from previous candle
-            double prev_atr1 = m_atrValues[i+1];
-            double prev_close1 = m_closeValues[i+1];
-            double prev_atr2 = m_atrValues[i+2];
-            double prev_close2 = m_closeValues[i+2];
+        // Ensure we have enough data
+        if(count < 3) {
+            Print("Warning: Not enough data to draw ATR bands - need at least 3 bars");
+            return;
+        }
+        
+        // Get values from the last completed bar (index 1)
+        double prev_atr = m_atrValues[1];      // ATR of the last completed candle
+        double prev_close = m_closeValues[1];  // Close of the last completed candle
+        
+        // Store current ATR values for panel display - handle special case when multiplier is 0
+        m_currentATR = prev_atr;
+        
+        // Check if ATR multiplier is zero - in this case, bands will be at the closing price
+        if(m_settings.atrMultiplier == 0) {
+            m_currentUpperBand = prev_close;
+            m_currentLowerBand = prev_close;
             
-            // Store values for most recent bar - exactly like reference
-            if (i == 0) {
-                m_currentATR = prev_atr1;
-                m_currentUpperBand = prev_close1 + (prev_atr1 * m_settings.atrMultiplier);
-                m_currentLowerBand = prev_close1 - (prev_atr1 * m_settings.atrMultiplier);
-                
-                if(m_settings.testMode) {
-                    Print("Current bar ATR = ", DoubleToString(m_currentATR, 5), 
-                          ", Upper = ", DoubleToString(m_currentUpperBand, 5),
-                          ", Lower = ", DoubleToString(m_currentLowerBand, 5));
-                }
-            }
+            Print("ATR Multiplier is zero - bands set to closing price: ", DoubleToString(prev_close, 5));
             
-            // Calculate band values for current and next point - exact match to reference
-            double upper_band1 = prev_close1 + (prev_atr1 * m_settings.atrMultiplier);
-            double lower_band1 = prev_close1 - (prev_atr1 * m_settings.atrMultiplier);
-            double upper_band2 = prev_close2 + (prev_atr2 * m_settings.atrMultiplier);
-            double lower_band2 = prev_close2 - (prev_atr2 * m_settings.atrMultiplier);
-            
-            // Create upper band segment - exactly like reference
-            string upper_name = "ATRBand_Upper_" + IntegerToString(i);
-            if (!ObjectCreate(0, upper_name, OBJ_TREND, 0, m_timeValues[i+1], upper_band1, m_timeValues[i+2], upper_band2)) {
-                Print("Failed to create upper band line: ", GetLastError());
-                continue;
-            }
-            
-            // Set upper band line properties - exactly like reference
+            // If multiplier is zero, don't draw any bands
+            return;
+        } else {
+            m_currentUpperBand = prev_close + (prev_atr * m_settings.atrMultiplier);
+            m_currentLowerBand = prev_close - (prev_atr * m_settings.atrMultiplier);
+        }
+        
+        // Log band calculation
+        Print("BANDS: Using last completed bar values - ATR: ", DoubleToString(m_currentATR, 5), 
+              ", Close: ", DoubleToString(prev_close, 5),
+              ", Upper: ", DoubleToString(m_currentUpperBand, 5),
+              ", Lower: ", DoubleToString(m_currentLowerBand, 5));
+        
+        // Draw horizontal lines with limited length, from bar 2 to next 2 bars
+        
+        // Get time values for line start and end - limited to just 4 bars total
+        datetime startTime = m_timeValues[2];  // 2 bars back
+        
+        // Calculate end time - exactly 2 bars forward from current bar
+        int barPeriod = PeriodSeconds(_Period);
+        datetime endTime = m_timeValues[0] + (barPeriod * 2);  // 2 bars ahead of current bar
+        
+        // Create upper band horizontal line
+        string upper_name = "ATRBand_Upper_H";
+        if(!ObjectCreate(0, upper_name, OBJ_TREND, 0, startTime, m_currentUpperBand, endTime, m_currentUpperBand)) {
+            Print("Failed to create upper band line: ", GetLastError());
+        } else {
+            // Set upper band line properties - dotted style
             ObjectSetInteger(0, upper_name, OBJPROP_COLOR, m_settings.upperBandColor);
-            ObjectSetInteger(0, upper_name, OBJPROP_STYLE, STYLE_SOLID);
+            ObjectSetInteger(0, upper_name, OBJPROP_STYLE, STYLE_DOT);  // Changed to dotted
             ObjectSetInteger(0, upper_name, OBJPROP_WIDTH, m_settings.lineWidth);
-            ObjectSetInteger(0, upper_name, OBJPROP_RAY_RIGHT, false);
+            ObjectSetInteger(0, upper_name, OBJPROP_RAY_RIGHT, false); // Not extended to right
             ObjectSetInteger(0, upper_name, OBJPROP_RAY_LEFT, false);
-            
-            // Create lower band segment - exactly like reference
-            string lower_name = "ATRBand_Lower_" + IntegerToString(i);
-            if (!ObjectCreate(0, lower_name, OBJ_TREND, 0, m_timeValues[i+1], lower_band1, m_timeValues[i+2], lower_band2)) {
-                Print("Failed to create lower band line: ", GetLastError());
-                continue;
-            }
-            
-            // Set lower band line properties - exactly like reference
+        }
+        
+        // Create lower band horizontal line
+        string lower_name = "ATRBand_Lower_H";
+        if(!ObjectCreate(0, lower_name, OBJ_TREND, 0, startTime, m_currentLowerBand, endTime, m_currentLowerBand)) {
+            Print("Failed to create lower band line: ", GetLastError());
+        } else {
+            // Set lower band line properties - dotted style
             ObjectSetInteger(0, lower_name, OBJPROP_COLOR, m_settings.lowerBandColor);
-            ObjectSetInteger(0, lower_name, OBJPROP_STYLE, STYLE_SOLID);
+            ObjectSetInteger(0, lower_name, OBJPROP_STYLE, STYLE_DOT);  // Changed to dotted
             ObjectSetInteger(0, lower_name, OBJPROP_WIDTH, m_settings.lineWidth);
-            ObjectSetInteger(0, lower_name, OBJPROP_RAY_RIGHT, false);
+            ObjectSetInteger(0, lower_name, OBJPROP_RAY_RIGHT, false); // Not extended to right
             ObjectSetInteger(0, lower_name, OBJPROP_RAY_LEFT, false);
         }
         
-        // Display ATR value as a label - exact match to reference
+        // Display ATR value as a label
         string atr_label = "ATRBand_Value";
         string atr_text = "ATR(" + IntegerToString(m_settings.atrPeriod) + "): " + 
-                         DoubleToString(m_atrValues[1], _Digits);
+                         DoubleToString(m_atrValues[1], _Digits) + 
+                         "  |  Upper: " + DoubleToString(m_currentUpperBand, _Digits) +
+                         "  |  Lower: " + DoubleToString(m_currentLowerBand, _Digits);
         
         if (ObjectFind(0, atr_label) < 0) {
             // Create new label
