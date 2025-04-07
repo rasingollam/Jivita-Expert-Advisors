@@ -10,7 +10,7 @@
 
 // Define constants for panel dimensions and styling
 #define PANEL_NAME "ATRPanel"
-#define PANEL_TITLE "ATR Bands Expert Advisor"
+#define PANEL_TITLE "ATR Bands"
 #define PANEL_X 20
 #define PANEL_Y 20
 #define PANEL_WIDTH 300
@@ -559,8 +559,15 @@ public:
             m_panelInitialized = false;
         }
         
+        // Also ensure all drawings are removed
+        ObjectsDeleteAll(0, "ATRBand_");    // Remove all ATR band lines
+        ObjectsDeleteAll(0, "ATRSignal_");  // Remove all signal markers
+        
         // Clear chart comment
         Comment("");
+        
+        // Force chart redraw
+        ChartRedraw();
     }
     
     // Update the UI

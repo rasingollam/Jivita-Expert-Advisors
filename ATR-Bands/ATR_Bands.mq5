@@ -185,8 +185,16 @@ void OnDeinit(const int reason)
       settings = NULL;
    }
    
+   // Remove all chart objects drawn by the EA
+   ObjectsDeleteAll(0, "ATRBand_");    // Remove all ATR band lines
+   ObjectsDeleteAll(0, "ATRSignal_");  // Remove all signal markers
+   ObjectsDeleteAll(0, "ATRPanel");    // Remove any panel elements
+   
    // Clear chart objects and comment
    Comment("");
+   
+   // Force chart redraw to ensure all objects are removed
+   ChartRedraw();
 }
 
 //+------------------------------------------------------------------+
