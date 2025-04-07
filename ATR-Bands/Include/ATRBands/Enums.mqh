@@ -4,29 +4,22 @@
 //|                                           by Malinda Rasingolla  |
 //+------------------------------------------------------------------+
 
-// Define enum for signal types - EXACT MATCH to reference ATR.mq5
+// Simplified enum - removed breakout and both options, keeping only touch signals
 enum ENUM_SIGNAL_TYPE {
-   SIGNAL_TYPE_BREAKOUT = 0,    // Trade only breakout signals
-   SIGNAL_TYPE_TOUCH = 1,       // Trade only touch signals
-   SIGNAL_TYPE_BOTH = 2         // Trade both signal types
+   SIGNAL_TYPE_TOUCH = 0       // Trade only touch signals
 };
 
-// Add a function to verify enum values are valid
+// Simple validation function - always returns true now since we only have one option
 bool IsValidSignalType(ENUM_SIGNAL_TYPE type) {
-   return type >= SIGNAL_TYPE_BREAKOUT && type <= SIGNAL_TYPE_BOTH;
+   return type == SIGNAL_TYPE_TOUCH;
 }
 
-// Add string representation for signal type
+// Add string representation for signal type - simplified
 string SignalTypeToString(ENUM_SIGNAL_TYPE type) {
-   switch(type) {
-      case SIGNAL_TYPE_BREAKOUT: return "Breakout";
-      case SIGNAL_TYPE_TOUCH: return "Touch";
-      case SIGNAL_TYPE_BOTH: return "Both";
-      default: return "Unknown";
-   }
+   return "Touch";
 }
 
-// Structure to hold signal information - formatted to hold same data as reference
+// Structure to hold signal information
 struct SignalInfo {
    bool hasSignal;              // Whether a signal exists
    bool isBuySignal;            // True for buy, false for sell

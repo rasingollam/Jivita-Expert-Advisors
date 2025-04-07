@@ -246,12 +246,8 @@ private:
         // --- Signal Information Section ---
         CreateSectionHeaderStatic("Signal Information", y);
         
-        // Create labels for signal section
-        string signalTypeSettingText = "Both Breakout & Touch";
-        if (m_settings.signalType == SIGNAL_TYPE_BREAKOUT) signalTypeSettingText = "Breakout Only";
-        if (m_settings.signalType == SIGNAL_TYPE_TOUCH) signalTypeSettingText = "Touch Only";
-        
-        CreateInfoLabelPair("Signal Type Setting", signalTypeSettingText, y);
+        // Create labels for signal section - simplified to show only Touch signals
+        CreateInfoLabelPair("Signal Type", "Touch Only", y);
         CreateInfoLabelPair("Current Signal", "None", y);
         
         // --- Trade Settings Section ---
@@ -405,15 +401,18 @@ private:
         UpdateInfoValue("Upper Band", DoubleToString(upperBand, 5));
         UpdateInfoValue("Lower Band", DoubleToString(lowerBand, 5));
         
-        // Update Signal Information section
+        // Update Signal Information section - Always show "Touch Only"
+        UpdateInfoValue("Signal Type", "Touch Only");
+        
+        // Update the signal display
         color signalColor = TEXT_COLOR;
         string signalText = "None";
         
         if (currentSignal.hasSignal) {
             signalText = currentSignal.isBuySignal ? 
-                       "BUY (" + currentSignal.signalType + ")" : 
-                       "SELL (" + currentSignal.signalType + ")";
-            signalColor = currentSignal.isBuySignal ? SIGNAL_BUY_COLOR : SIGNAL_SELL_COLOR;
+                       "BUY (Touch)" : 
+                       "SELL (Touch)";
+            signalColor = currentSignal.isBuySignal ? m_settings.buyTouchColor : m_settings.sellTouchColor;
         }
         
         UpdateInfoValue("Current Signal", signalText, signalColor);

@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2023, Jivita by Malinda Rasingolla"
 #property version   "1.00"
-#property description "Expert Advisor that trades on signals base on ATR Bands"
+#property description "Expert Advisor that trades on ATR Bands Touch signals"
 
 // Include standard library and custom classes
 #include <Trade/Trade.mqh>
@@ -26,12 +26,9 @@ input color            LowerBandColor = clrBlue;       // Lower band color
 input int              LineWidth = 1;                  // Width of the lines
 
 input group "Signal Settings"
-input ENUM_SIGNAL_TYPE SignalType = SIGNAL_TYPE_BOTH;  // Signal type to trade
-input color            BuySignalColor = clrLime;       // Buy signal color (breakout)
-input color            SellSignalColor = clrRed;       // Sell signal color (breakout)
+// Signal type is now fixed to TOUCH only (removed input)
 input color            BuyTouchColor = clrGreen;       // Buy signal color (touch)
 input color            SellTouchColor = clrMaroon;     // Sell signal color (touch)
-input int              SignalSize = 3;                 // Size of signal arrows
 
 input group "Trade Settings"
 input bool             EnableTrading = true;           // Enable automatic trading
@@ -42,10 +39,6 @@ input bool             UseTakeProfit = true;           // Use Take Profit
 input int              MagicNumber = 12345;            // Magic Number to identify this EA's trades
 input double           TargetProfitPercent = 0.0;      // Target profit percentage (0 = disabled)
 input double           StopLossPercent = 0.0;          // Stop trading when drawdown exceeds this percentage (0 = disabled)
-
-input group "Testing Settings"
-input bool             TestMode = false;               // Enable test mode with detailed logging
-input bool             ForceTrading = false;           // Force trading even if disabled
 
 // Class instances for the EA components
 ATRIndicator* atrIndicator = NULL;
@@ -58,6 +51,10 @@ EASettings* settings = NULL;
 datetime lastBarTime = 0;
 datetime lastLogTime = 0;  // For limiting debug output
 
+// Default values for removed parameters
+const int DEFAULT_SIGNAL_SIZE = 3;  // Default signal size
+const bool DEFAULT_TEST_MODE = false;  // Default test mode setting
+
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
@@ -67,7 +64,6 @@ int OnInit()
    Print("===== ATR BANDS EA INITIALIZATION START =====");
    Print("Symbol: ", _Symbol, ", Period: ", EnumToString(_Period));
    Print("Inputs - ATR Period: ", ATR_Period, ", Multiplier: ", ATR_Multiplier);
-   Print("Testing: ", MQLInfoInteger(MQL_TESTER) ? "Yes" : "No", ", TestMode: ", TestMode ? "Yes" : "No");
    
    // Protect against reinitialization without proper cleanup
    if(settings != NULL || atrIndicator != NULL || signalDetector != NULL || 
@@ -80,7 +76,7 @@ int OnInit()
    bool isOptimization = MQLInfoInteger(MQL_OPTIMIZATION);
    Print("ATR Bands EA initializing, optimization mode: ", (isOptimization ? "Yes" : "No"));
    
-   // Initialize settings (with try-catch pattern)
+   // Initialize settings
    Print("Attempting to create settings object...");
    settings = new EASettings();
    if(settings == NULL) {
@@ -91,14 +87,14 @@ int OnInit()
    Print("Attempting to initialize settings with parameters...");
    Print("ATR_Period:", ATR_Period, " ATR_Multiplier:", ATR_Multiplier);
    
-   // Update the settings.Initialize call to include TestMode
+   // Fixed signal type to TOUCH, use DEFAULT_SIGNAL_SIZE instead of input parameter
    if(!settings.Initialize(ATR_Period, ATR_Multiplier, Price, 
                            UpperBandColor, LowerBandColor, LineWidth, 
-                           SignalType, SignalSize, BuySignalColor, SellSignalColor, 
+                           SIGNAL_TYPE_TOUCH, DEFAULT_SIGNAL_SIZE, clrNONE, clrNONE, 
                            BuyTouchColor, SellTouchColor, EnableTrading, 
                            RiskRewardRatio, RiskPercentage, StopLossPips, 
                            UseTakeProfit, MagicNumber, TargetProfitPercent, 
-                           StopLossPercent, isOptimization, TestMode)) {
+                           StopLossPercent, isOptimization, DEFAULT_TEST_MODE)) {
       Print("Failed to initialize settings - check above for detailed error");
       return INIT_FAILED;
    }
@@ -214,7 +210,7 @@ bool IsNewBar()
 void OnTick()
 {
    // Add diagnostics to track execution
-   if(TimeCurrent() - lastLogTime > 60 && TestMode) { // Log only once per minute to avoid flooding
+   if(TimeCurrent() - lastLogTime > 60) { // Log only once per minute to avoid flooding
       Print("ATR Bands EA running tick: ", TimeCurrent());
       lastLogTime = TimeCurrent();
    }
@@ -238,12 +234,6 @@ void OnTick()
       return;
    }
    
-   // For testing, we might want to force trading
-   if(TestMode && ForceTrading && tradeManager != NULL) {
-      tradeManager.ResetTradingState();
-      Print("Test mode: Trading forcibly enabled");
-   }
-   
    // Check if trade manager needs to update profit limits
    tradeManager.CheckProfitLimits();
    
@@ -252,7 +242,7 @@ void OnTick()
    
    // Process on new bar only - just like reference implementation
    if(newBar) {
-      if(TestMode) Print("Processing new bar at: ", TimeToString(lastBarTime));
+      Print("Processing new bar at: ", TimeToString(lastBarTime));
       
       // Calculate ATR bands
       if(!atrIndicator.Calculate()) {
@@ -261,18 +251,15 @@ void OnTick()
       }
       
       // Log current ATR values for verification
-      if(TestMode) {
-         Print("ATR value: ", DoubleToString(atrIndicator.GetCurrentATR(), _Digits),
-               ", Upper band: ", DoubleToString(atrIndicator.GetUpperBand(), _Digits),
-               ", Lower band: ", DoubleToString(atrIndicator.GetLowerBand(), _Digits));
-         Print("Signal type setting: ", SignalTypeToString(SignalType), " (", SignalType, ")");
-      }
+      Print("ATR value: ", DoubleToString(atrIndicator.GetCurrentATR(), _Digits),
+            ", Upper band: ", DoubleToString(atrIndicator.GetUpperBand(), _Digits),
+            ", Lower band: ", DoubleToString(atrIndicator.GetLowerBand(), _Digits));
       
-      // Look for signals - with enhanced error logging
+      // Look for touch signals only
       SignalInfo signal = signalDetector.DetectSignals();
       
       // Log detected signal
-      if(signal.hasSignal && TestMode) {
+      if(signal.hasSignal) {
          Print("Detected signal: ", signal.signalType, 
                ", Direction: ", (signal.isBuySignal ? "BUY" : "SELL"));
       }

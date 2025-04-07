@@ -67,7 +67,7 @@ public:
         return m_currentSignal;
     }
     
-    // Detect trading signals based on ATR bands - fixed signal type processing
+    // Detect trading signals based on ATR bands - touch signals only
     SignalInfo DetectSignals(int barsToProcess = 5) {
         // Reset the current signal
         ResetSignal();
@@ -77,8 +77,7 @@ public:
         bool shouldLog = TimeCurrent() - lastDetectionLog > 300; // Log every 5 minutes
         
         if(shouldLog || m_settings.testMode) {
-            Print("Signal detection running at ", TimeToString(TimeCurrent()), 
-                  " - Signal Type Setting: ", SignalTypeToString(m_settings.signalType));
+            Print("Signal detection running at ", TimeToString(TimeCurrent()));
             lastDetectionLog = TimeCurrent();
         }
         
@@ -102,7 +101,7 @@ public:
             return m_currentSignal;
         }
         
-        // Process bars to detect signals - using exact reference implementation logic
+        // Process bars to detect signals - only touch signals now
         for (int i = 1; i < barsToProcess-1 && !IsStopped(); i++) {
             // Get values for the bar
             double prev_atr = m_atrIndicator.GetATR(i);
@@ -113,134 +112,58 @@ public:
             double candle_high = m_atrIndicator.GetHigh(i);
             double candle_low = m_atrIndicator.GetLow(i);
             
-            // Calculate band values - using exact formula from reference
+            // Calculate band values for this bar
             double upper_band = prev_close + (prev_atr * m_settings.atrMultiplier);
             double lower_band = prev_close - (prev_atr * m_settings.atrMultiplier);
             
             if(m_settings.testMode && i == 1) {
-                Print("Checking bar ", i, " - Signal Type: ", SignalTypeToString(m_settings.signalType),
-                     ", ATR: ", prev_atr, 
+                Print("Bar ", i, " - ATR: ", prev_atr, 
                      ", Close: ", prev_close,
                      ", Upper: ", upper_band,
                      ", Lower: ", lower_band);
             }
             
-            // Method 1: BREAKOUT SIGNALS - close beyond bands
-            if (candle_close > upper_band) {
-                // Create visual signal
-                if(!m_settings.isOptimization) {
-                    CreateSignalArrow(i, "Breakout", true, candle_high, m_settings.buySignalColor);
-                }
-                
-                // Set trading signal ONLY if this is the right signal type
-                if (i == 1 && !m_lastSignalProcessed) {
-                    if(m_settings.testMode) {
-                        Print("Detected breakout buy pattern at bar ", i, 
-                              " - Setting signal: ", 
-                              ((m_settings.signalType == SIGNAL_TYPE_BREAKOUT || 
-                                m_settings.signalType == SIGNAL_TYPE_BOTH) ? "YES" : "NO"));
-                    }
-                    
-                    // Check if we should trade this signal type
-                    if(m_settings.signalType == SIGNAL_TYPE_BREAKOUT || 
-                       m_settings.signalType == SIGNAL_TYPE_BOTH) {
-                        m_currentSignal = SignalInfo(true, true, "Breakout Buy");
-                        m_lastSignalProcessed = true;
-                        
-                        if(m_settings.testMode) Print("BREAKOUT BUY signal activated for trading");
-                    }
-                }
-            }
+            // TOUCH SIGNALS ONLY - Removed previous checks for SIGNAL_TYPE_BREAKOUT or SIGNAL_TYPE_BOTH
             
-            // Check for sell breakout signals
-            if (candle_close < lower_band) {
-                // Create visual signal
-                if(!m_settings.isOptimization) {
-                    CreateSignalArrow(i, "Breakout", false, candle_low, m_settings.sellSignalColor);
-                }
-                
-                // Set trading signal ONLY if this is the right signal type
-                if (i == 1 && !m_lastSignalProcessed) {
-                    if(m_settings.testMode) {
-                        Print("Detected breakout sell pattern at bar ", i, 
-                              " - Setting signal: ", 
-                              ((m_settings.signalType == SIGNAL_TYPE_BREAKOUT || 
-                                m_settings.signalType == SIGNAL_TYPE_BOTH) ? "YES" : "NO"));
-                    }
-                    
-                    // Check if we should trade this signal type
-                    if(m_settings.signalType == SIGNAL_TYPE_BREAKOUT || 
-                       m_settings.signalType == SIGNAL_TYPE_BOTH) {
-                        m_currentSignal = SignalInfo(true, false, "Breakout Sell");
-                        m_lastSignalProcessed = true;
-                        
-                        if(m_settings.testMode) Print("BREAKOUT SELL signal activated for trading");
-                    }
-                }
-            }
-            
-            // Method 2: TOUCH SIGNALS - touch but close inside bands
             // Check for sell touch signals - high touches upper band but close below it
             if (candle_high >= upper_band && candle_close < upper_band) {
-                // Create visual signal
+                // Create visual signal - sell on touch of upper band
                 if(!m_settings.isOptimization) {
                     CreateSignalArrow(i, "Touch", false, candle_high, m_settings.sellTouchColor);
                 }
                 
-                // Set trading signal ONLY if this is the right signal type
+                // Set trading signal if this is the most recent completed bar - always set for TOUCH now
                 if (i == 1 && !m_lastSignalProcessed) {
-                    if(m_settings.testMode) {
-                        Print("Detected touch sell pattern at bar ", i, 
-                              " - Setting signal: ", 
-                              ((m_settings.signalType == SIGNAL_TYPE_TOUCH || 
-                                m_settings.signalType == SIGNAL_TYPE_BOTH) ? "YES" : "NO"));
-                    }
+                    m_currentSignal = SignalInfo(true, false, "Touch Sell");
+                    m_lastSignalProcessed = true;
                     
-                    // Check if we should trade this signal type
-                    if(m_settings.signalType == SIGNAL_TYPE_TOUCH || 
-                       m_settings.signalType == SIGNAL_TYPE_BOTH) {
-                        m_currentSignal = SignalInfo(true, false, "Touch Sell");
-                        m_lastSignalProcessed = true;
-                        
-                        if(m_settings.testMode) Print("TOUCH SELL signal activated for trading");
-                    }
+                    if(m_settings.testMode) Print("Touch Sell signal detected at bar ", i);
                 }
             }
             
             // Check for buy touch signals - low touches lower band but close above it
             if (candle_low <= lower_band && candle_close > lower_band) {
-                // Create visual signal
+                // Create visual signal - buy on touch of lower band
                 if(!m_settings.isOptimization) {
                     CreateSignalArrow(i, "Touch", true, candle_low, m_settings.buyTouchColor);
                 }
                 
-                // Set trading signal ONLY if this is the right signal type
+                // Set trading signal if this is the most recent completed bar - always set for TOUCH now
                 if (i == 1 && !m_lastSignalProcessed) {
-                    if(m_settings.testMode) {
-                        Print("Detected touch buy pattern at bar ", i, 
-                              " - Setting signal: ", 
-                              ((m_settings.signalType == SIGNAL_TYPE_TOUCH || 
-                                m_settings.signalType == SIGNAL_TYPE_BOTH) ? "YES" : "NO"));
-                    }
+                    m_currentSignal = SignalInfo(true, true, "Touch Buy");
+                    m_lastSignalProcessed = true;
                     
-                    // Check if we should trade this signal type
-                    if(m_settings.signalType == SIGNAL_TYPE_TOUCH || 
-                       m_settings.signalType == SIGNAL_TYPE_BOTH) {
-                        m_currentSignal = SignalInfo(true, true, "Touch Buy");
-                        m_lastSignalProcessed = true;
-                        
-                        if(m_settings.testMode) Print("TOUCH BUY signal activated for trading");
-                    }
+                    if(m_settings.testMode) Print("Touch Buy signal detected at bar ", i);
                 }
             }
         }
         
-        // Report final signal detection status
+        // Add signal detection logging
         if(m_currentSignal.hasSignal) {
-            Print("FINAL SIGNAL: ", m_currentSignal.signalType, 
+            Print("Signal detected: ", m_currentSignal.signalType, 
                   ", Direction: ", (m_currentSignal.isBuySignal ? "BUY" : "SELL"));
-        } else if(shouldLog || m_settings.testMode) {
-            Print("No trading signal detected for current bar");
+        } else if(shouldLog) {
+            Print("No trading signal detected");
         }
         
         return m_currentSignal;
