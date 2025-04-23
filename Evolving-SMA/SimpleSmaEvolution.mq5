@@ -135,7 +135,7 @@ void OnTick()
    // Update chart comment periodically (every 10 seconds)
    datetime current_time = TimeCurrent();
    if(current_time - g_lastUpdateTime > 10) {
-      // UpdateChartComment();
+      UpdateChartComment();
       g_lastUpdateTime = current_time;
    }
 }
