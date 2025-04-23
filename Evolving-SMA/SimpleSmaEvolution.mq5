@@ -14,7 +14,8 @@
 // Trading Parameters
 input int              Inp_ShortPeriod = 10;        // Short SMA Period
 input int              Inp_LongPeriod = 30;         // Long SMA Period
-input double           Inp_LotSize = 0.01;          // Fixed Lot Size
+input double           Inp_LotSize = 0.01;          // Fixed Lot Size (0 = use risk-based sizing)
+input double           Inp_RiskPercentage = 1.0;    // Risk percentage per trade (when lot size = 0)
 input ulong            Inp_MagicNumber = 123456;    // Magic Number
 input int              Inp_StopLossPips = 50;       // Stop Loss in pips (0=off)
 input int              Inp_TakeProfitPips = 100;    // Take Profit in pips (0=off)
@@ -134,7 +135,7 @@ void OnTick()
    // Update chart comment periodically (every 10 seconds)
    datetime current_time = TimeCurrent();
    if(current_time - g_lastUpdateTime > 10) {
-      UpdateChartComment();
+      // UpdateChartComment();
       g_lastUpdateTime = current_time;
    }
 }
@@ -238,11 +239,53 @@ int CheckSignal()
 }
 
 //+------------------------------------------------------------------+
+//| Calculate position size based on risk percentage                  |
+//+------------------------------------------------------------------+
+double CalculatePositionSize(double stopLossDistance)
+{
+   // If fixed lot size is set or stop loss is disabled, return fixed size
+   if(Inp_LotSize > 0 || Inp_StopLossPips <= 0 || stopLossDistance <= 0)
+      return Inp_LotSize > 0 ? Inp_LotSize : 0.01;
+      
+   // Get account balance
+   double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+   
+   // Calculate risk amount based on percentage
+   double riskAmount = accountBalance * (Inp_RiskPercentage / 100.0);
+   
+   // Get symbol information
+   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   
+   if(stopLossDistance <= 0 || tickSize <= 0 || tickValue <= 0 || lotStep <= 0)
+      return minLot;
+   
+   // Calculate position size based on risk
+   double riskPerTick = riskAmount / (stopLossDistance / tickSize * tickValue);
+   double lots = NormalizeDouble(riskPerTick, 2);
+   
+   // Apply constraints
+   lots = MathMax(lots, minLot);
+   lots = MathMin(lots, maxLot);
+   lots = MathFloor(lots / lotStep) * lotStep;
+   
+   PrintFormat("Risk calculation: Balance=%.2f, Risk=%.2f%%, Amount=%.2f, SL Distance=%.5f, Lot Size=%.2f", 
+               accountBalance, Inp_RiskPercentage, riskAmount, stopLossDistance, lots);
+   
+   return lots;
+}
+
+//+------------------------------------------------------------------+
 //| Execute trading signal                                           |
 //+------------------------------------------------------------------+
 void ExecuteSignal(int signal)
 {
    double price, sl, tp;
+   double lotSize;
+   double stopLossDistance; // Moved variable declaration here to fix the error
    
    switch(signal) {
       case 1: // Open Buy
@@ -251,9 +294,16 @@ void ExecuteSignal(int signal)
             return;
          }
          price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+         
+         // Calculate stop loss price
          sl = Inp_StopLossPips > 0 ? price - Inp_StopLossPips * Point() : 0;
          tp = Inp_TakeProfitPips > 0 ? price + Inp_TakeProfitPips * Point() : 0;
-         g_trade.Buy(Inp_LotSize, _Symbol, price, sl, tp, "SMA Buy");
+         
+         // Calculate position size based on risk percentage
+         stopLossDistance = price - sl; // Removed 'double' to fix the error
+         lotSize = CalculatePositionSize(stopLossDistance);
+         
+         g_trade.Buy(lotSize, _Symbol, price, sl, tp, "SMA Buy");
          break;
          
       case 2: // Open Sell
@@ -262,9 +312,16 @@ void ExecuteSignal(int signal)
             return;
          }
          price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         
+         // Calculate stop loss price
          sl = Inp_StopLossPips > 0 ? price + Inp_StopLossPips * Point() : 0;
          tp = Inp_TakeProfitPips > 0 ? price - Inp_TakeProfitPips * Point() : 0;
-         g_trade.Sell(Inp_LotSize, _Symbol, price, sl, tp, "SMA Sell");
+         
+         // Calculate position size based on risk percentage
+         stopLossDistance = sl - price; // Removed 'double' to fix the error
+         lotSize = CalculatePositionSize(stopLossDistance);
+         
+         g_trade.Sell(lotSize, _Symbol, price, sl, tp, "SMA Sell");
          break;
          
       case -1: // Close Sells
@@ -624,6 +681,13 @@ void UpdateChartComment()
    g_infoText = "SimpleSmaEvolution EA - Last Updated: " + time_str + "\n";
    g_infoText += "SMA Periods: Short=" + IntegerToString(g_shortPeriod) + 
                  ", Long=" + IntegerToString(g_longPeriod) + "\n";
+   
+   // Add position sizing info
+   if(Inp_LotSize <= 0) {
+      g_infoText += "Position Sizing: Risk " + DoubleToString(Inp_RiskPercentage, 1) + "% of balance\n";
+   } else {
+      g_infoText += "Position Sizing: Fixed " + DoubleToString(Inp_LotSize, 2) + " lots\n";
+   }
    
    if(Inp_EvolutionMinutes > 0) {
       datetime next_evo = g_lastEvolutionTime + Inp_EvolutionMinutes * 60;
