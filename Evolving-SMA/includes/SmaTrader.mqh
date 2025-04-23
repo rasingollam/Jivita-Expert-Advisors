@@ -1,3 +1,6 @@
+#ifndef JIVITA_SMATRADER_MQH
+#define JIVITA_SMATRADER_MQH
+
 //+------------------------------------------------------------------+
 //|                                                   SmaTrader.mqh  |
 //|                                          Copyright 2025, Jivita  |
@@ -5,6 +8,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2025, Jivita by Malinda Rasingolla"
 #property version   "1.00"
+#property strict // Ensure strict compilation mode
 
 #include <Trade/Trade.mqh>
 
@@ -556,3 +560,5 @@ bool CSmaTrader::IsSpreadOk(void)
     return (spread_points <= m_spread_max_points);
   }
 //+------------------------------------------------------------------+
+
+#endif // JIVITA_SMATRADER_MQH

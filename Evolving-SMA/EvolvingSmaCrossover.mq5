@@ -8,7 +8,7 @@
 #property description "SMA Crossover EA with self-evolving parameters using Genetic Algorithm (OOP)"
 
 //--- Include custom classes (Adjust path if needed)
-#include "includes/SmaTrader.mqh"         // Corrected path
+#include "includes/SmaTrader.mqh"         // Restore include
 #include "includes/GeneticAlgorithm.mqh"  // Corrected path (includes Chromosome.mqh and ENUM_OPTIMIZATION_CRITERION)
 
 //--- Input Parameters ---
@@ -39,7 +39,7 @@ input group           "Evolution Trigger"
 input int             InpEvolutionFrequencyMinutes = 60;   // How often to run GA (in minutes)
 
 //--- Global Objects ---
-CSmaTrader         *g_trader = NULL; // Pointer to the trader object
+CSmaTrader         *g_trader = NULL; // Restore trader object
 CGeneticAlgorithm  *g_ga = NULL;     // Pointer to the GA object
 CChromosome        *g_best_params = NULL; // Pointer to the current best parameters found by GA
 
@@ -55,7 +55,7 @@ datetime g_last_evolution_time = 0;
 //+------------------------------------------------------------------+
 int OnInit()
   {
-   Print("Initializing Evolving SMA Crossover EA...");
+   Print("Initializing Evolving SMA Crossover EA..."); // Restore message
 
    //--- Validate Inputs ---
    if(InpInitialLongSmaPeriod <= InpInitialShortSmaPeriod) {
@@ -83,11 +83,13 @@ int OnInit()
 
 
    //--- Create Objects ---
+   // Restore trader creation
    g_trader = new CSmaTrader();
    if(CheckPointer(g_trader) == POINTER_INVALID) {
       Print("Error: Failed to create CSmaTrader object!");
       return(INIT_FAILED);
    }
+
 
    g_ga = new CGeneticAlgorithm(InpGaPopulationSize, InpGaMutationRate, InpGaCrossoverRate, InpGaGenerations,
                                 InpGaMinSmaPeriod, InpGaMaxSmaPeriod, InpGaMinPeriodDifference, InpGaFitnessHistoryBars,
@@ -109,13 +111,26 @@ int OnInit()
       g_ga = NULL;
       return(INIT_FAILED);
     }
-   // Set initial parameters from inputs
-   g_best_params->SetShortPeriod(InpInitialShortSmaPeriod); // Use ->
-   g_best_params->SetLongPeriod(InpInitialLongSmaPeriod);  // Use ->
-   g_best_params->SetFitness(-DBL_MAX); // Use -> // Start with worst fitness
+   // Set initial parameters from inputs (REMOVE EXPLICIT CASTS)
+   if(CheckPointer(g_best_params) != POINTER_INVALID) // Keep check
+   {
+       g_best_params->SetShortPeriod(InpInitialShortSmaPeriod); // Remove Cast
+       g_best_params->SetLongPeriod(InpInitialLongSmaPeriod);  // Remove Cast
+       g_best_params->SetFitness(-DBL_MAX);                     // Remove Cast
+   } else {
+       Print("CRITICAL ERROR: g_best_params is invalid before setting initial values!");
+       // Clean up allocated objects before failing
+       delete g_trader;
+       delete g_ga;
+       g_trader = NULL;
+       g_ga = NULL;
+       return(INIT_FAILED);
+   }
+
 
    //--- Initialize Trader ---
-   if(!g_trader->Init(InpInitialShortSmaPeriod, InpInitialLongSmaPeriod, InpLotSize, InpMagicNumber, // Use ->
+   // Restore trader initialization
+   if(!g_trader->Init(InpInitialShortSmaPeriod, InpInitialLongSmaPeriod, InpLotSize, InpMagicNumber,
                      _Symbol, _Period, InpStopLossPips, InpTakeProfitPips, InpMaxSpreadPoints))
      {
       Print("Error: Failed to initialize CSmaTrader object!");
@@ -127,6 +142,7 @@ int OnInit()
       g_best_params = NULL;
       return(INIT_FAILED);
      }
+
 
    //--- Set Timer for Evolution ---
    // Convert frequency from minutes to seconds
@@ -143,7 +159,7 @@ int OnInit()
    // Optional: Set a faster timer for trade checks if not using OnTick
    // EventSetTimer(TRADE_CHECK_TIMER_EVENT, 1); // Check every second
 
-   Print("Evolving SMA Crossover EA Initialized Successfully.");
+   Print("Evolving SMA Crossover EA Initialized Successfully."); // Restore message
    g_last_evolution_time = TimeCurrent(); // Record init time as last evolution time initially
    //---
    return(INIT_SUCCEEDED); // Ensure this is INIT_SUCCEEDED
@@ -159,11 +175,13 @@ void OnDeinit(const int reason)
    EventKillTimer();
 
    //--- Clean up Objects ---
+   // Restore trader cleanup
    if(CheckPointer(g_trader) == POINTER_DYNAMIC)
      {
       delete g_trader;
       g_trader = NULL;
      }
+
    if(CheckPointer(g_ga) == POINTER_DYNAMIC)
      {
       delete g_ga;
@@ -184,7 +202,7 @@ void OnDeinit(const int reason)
 void OnTick()
   {
    //--- Check for valid objects ---
-   if(CheckPointer(g_trader) == POINTER_INVALID) return;
+   if(CheckPointer(g_trader) == POINTER_INVALID) return; // Restore check
 
    //--- Check for new bar (optional, can reduce redundant checks) ---
    static datetime last_bar_time = 0;
@@ -197,12 +215,13 @@ void OnTick()
 
 
    //--- Check Trading Signal ---
-   ENUM_TRADE_SIGNAL signal = g_trader->CheckSignal(); // Use ->
+   ENUM_TRADE_SIGNAL signal = g_trader->CheckSignal(); // Restore signal check
 
    //--- Execute Signal ---
+   // Restore signal execution
    if(signal != SIGNAL_NONE)
      {
-       g_trader->ExecuteSignal(signal); // Use ->
+       g_trader->ExecuteSignal(signal);
      }
    //---
   }
@@ -213,7 +232,7 @@ void OnTimer()
   {
    //--- Check for valid objects ---
    if(CheckPointer(g_ga) == POINTER_INVALID ||
-      CheckPointer(g_trader) == POINTER_INVALID ||
+      CheckPointer(g_trader) == POINTER_INVALID || // Restore check
       CheckPointer(g_best_params) == POINTER_INVALID ) return;
 
 
@@ -227,16 +246,16 @@ void OnTimer()
        PrintFormat("Evolution Triggered: Current Time = %s, Last Evolution = %s",
                    TimeToString(current_time), TimeToString(g_last_evolution_time));
 
-       // --- Run GA Evolution ---
+       // --- Run GA Evolution --- (REMOVE EXPLICIT CAST)
        Print("Starting GA evolution cycle...");
-       CChromosome *result = g_ga->RunEvolution(); // Use -> // This can take time!
+       CChromosome *result = g_ga->RunEvolution(); // Remove Cast
 
         if(CheckPointer(result) != POINTER_INVALID)
         {
-           // --- Compare with current best and update trader if improved ---
+           // --- Compare with current best and update trader if improved --- (REMOVE EXPLICIT CASTS)
            bool update_needed = false;
-           double new_fitness = result->GetFitness(); // Use ->
-           double old_fitness = g_best_params->GetFitness(); // Use ->
+           double new_fitness = result->GetFitness(); // Remove Cast
+           double old_fitness = g_best_params->GetFitness(); // Remove Cast
 
            if(InpGaOptimizationCriterion == CRITERION_MAX_DRAWDOWN) { // Minimization
                // Update if new fitness is significantly lower (e.g., by 1%) to avoid chasing noise
@@ -255,17 +274,20 @@ void OnTimer()
            if(update_needed && MathIsValidNumber(new_fitness)) // Ensure new fitness is valid before updating
            {
                 PrintFormat("GA found improved parameters! Old Fitness: %.4f, New Fitness: %.4f", old_fitness, new_fitness);
-                PrintFormat("Updating trader with Short=%d, Long=%d", result->GetShortPeriod(), result->GetLongPeriod()); // Use -> for result
+                // Remove casts for result access
+                PrintFormat("Updating trader with Short=%d, Long=%d", result->GetShortPeriod(), result->GetLongPeriod());
 
-                // Update the global best parameters tracker
-                g_best_params->Copy(result); // Use ->
+                // Update the global best parameters tracker (USE CopyFrom, REMOVE CAST)
+                g_best_params->CopyFrom(result); // Use CopyFrom, Remove Cast
 
                 // Update the trader's active parameters
-                if(!g_trader->UpdateParameters(result->GetShortPeriod(), result->GetLongPeriod())) // Use -> for g_trader and result
+                // Restore trader update
+                if(!g_trader->UpdateParameters(result->GetShortPeriod(), result->GetLongPeriod()))
                 {
                    Print("Error: Failed to update trader parameters after optimization!");
                    // Consider how to handle this - revert? stop?
                 }
+
            } else {
                PrintFormat("GA finished, but no significant improvement found over current best (Current: %.4f, New: %.4f). Keeping existing parameters.", old_fitness, new_fitness);
            }
@@ -290,6 +312,7 @@ void OnTimer()
 
    /*
    // --- Optional: Handle trade checks via timer instead of OnTick ---
+   // Restore timer-based trade check if used
    int timer_id = EventGetInteger(L"id"); // Get which timer triggered
    if(timer_id == TRADE_CHECK_TIMER_EVENT)
    {

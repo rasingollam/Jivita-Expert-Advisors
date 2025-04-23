@@ -1,3 +1,6 @@
+#ifndef JIVITA_GENETICALGORITHM_MQH
+#define JIVITA_GENETICALGORITHM_MQH
+
 //+------------------------------------------------------------------+
 //|                                            GeneticAlgorithm.mqh  |
 //|                                          Copyright 2025, Jivita  |
@@ -5,6 +8,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2025, Jivita by Malinda Rasingolla"
 #property version   "1.00"
+#property strict // Ensure strict compilation mode
 
 #include "Chromosome.mqh"
 
@@ -177,9 +181,10 @@ void CGeneticAlgorithm::InitializePopulation(void)
       // PrintFormat("Initial %d: Short=%d, Long=%d", i, m_population[i]->GetShortPeriod(), m_population[i]->GetLongPeriod()); // Ensure -> is used
      }
    // Initialize best chromosome with the first one initially
-   if(m_population_size > 0 && CheckPointer(m_population[0]) == POINTER_DYNAMIC)
-     m_best_chromosome->Copy(m_population[0]); // Ensure -> is used
-   m_best_chromosome->SetFitness(-DBL_MAX); // Ensure -> is used
+   if(m_population_size > 0 && CheckPointer(m_population[0]) == POINTER_DYNAMIC && CheckPointer(m_best_chromosome) != POINTER_INVALID)
+     m_best_chromosome->CopyFrom(m_population[0]); // Use CopyFrom
+   if(CheckPointer(m_best_chromosome) != POINTER_INVALID)
+     m_best_chromosome->SetFitness(-DBL_MAX); // Ensure -> is used
    Print("GA: Population Initialized.");
   }
 //+------------------------------------------------------------------+
@@ -223,8 +228,8 @@ void CGeneticAlgorithm::EvaluatePopulation(void)
            if(fitness > m_best_chromosome->GetFitness()) is_overall_better = true; // Ensure -> is used
        }
 
-       if(is_overall_better) {
-           m_best_chromosome->Copy(m_population[i]); // Ensure -> is used
+       if(is_overall_better && CheckPointer(m_best_chromosome) != POINTER_INVALID) {
+           m_best_chromosome->CopyFrom(m_population[i]); // Use CopyFrom
            // PrintFormat("GA: New overall best found! Fitness=%.2f, Short=%d, Long=%d", fitness, m_population[i]->GetShortPeriod(), m_population[i]->GetLongPeriod()); // Ensure -> is used
        }
      }
@@ -500,8 +505,8 @@ void CGeneticAlgorithm::Crossover(CChromosome *parent1, CChromosome *parent2, CC
     {
         Print("GA Error: Invalid pointers passed to Crossover.");
         // Optionally copy parents directly if crossover fails due to bad pointers
-        if(CheckPointer(child1) != POINTER_INVALID && CheckPointer(parent1) != POINTER_INVALID) child1->Copy(parent1); // Ensure -> is used
-        if(CheckPointer(child2) != POINTER_INVALID && CheckPointer(parent2) != POINTER_INVALID) child2->Copy(parent2); // Ensure -> is used
+        if(CheckPointer(child1) != POINTER_INVALID && CheckPointer(parent1) != POINTER_INVALID) child1->CopyFrom(parent1); // Use CopyFrom
+        if(CheckPointer(child2) != POINTER_INVALID && CheckPointer(parent2) != POINTER_INVALID) child2->CopyFrom(parent2); // Use CopyFrom
         return;
     }
 
@@ -529,8 +534,8 @@ void CGeneticAlgorithm::Crossover(CChromosome *parent1, CChromosome *parent2, CC
    else
      {
       // No crossover, children are clones of parents
-      child1->Copy(parent1); // Ensure -> is used
-      child2->Copy(parent2); // Ensure -> is used
+      child1->CopyFrom(parent1); // Use CopyFrom
+      child2->CopyFrom(parent2); // Use CopyFrom
      }
   }
 //+------------------------------------------------------------------+
@@ -581,9 +586,9 @@ void CGeneticAlgorithm::EvolveGeneration(void)
         } else {
             // Handle error case (e.g., copy parents if selection/allocation failed)
             if(CheckPointer(m_new_population[child_idx1]) != POINTER_INVALID && CheckPointer(parent1) != POINTER_INVALID)
-                m_new_population[child_idx1]->Copy(parent1); // Ensure -> is used
+                m_new_population[child_idx1]->CopyFrom(parent1); // Use CopyFrom
             if(CheckPointer(m_new_population[child_idx2]) != POINTER_INVALID && CheckPointer(parent2) != POINTER_INVALID)
-                m_new_population[child_idx2]->Copy(parent2); // Ensure -> is used
+                m_new_population[child_idx2]->CopyFrom(parent2); // Use CopyFrom
         }
      }
 
@@ -640,3 +645,5 @@ CChromosome* CGeneticAlgorithm::RunEvolution(void)
    return m_best_chromosome;
   }
 //+------------------------------------------------------------------+
+
+#endif // JIVITA_GENETICALGORITHM_MQH
