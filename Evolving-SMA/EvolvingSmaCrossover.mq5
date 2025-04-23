@@ -8,8 +8,8 @@
 #property description "SMA Crossover EA with self-evolving parameters using Genetic Algorithm (OOP)"
 
 //--- Include custom classes (Adjust path if needed)
-#include <EvolvingEA\SmaTrader.mqh>
-#include <EvolvingEA\GeneticAlgorithm.mqh>
+#include "includes/SmaTrader.mqh"         // Corrected path
+#include "includes/GeneticAlgorithm.mqh"  // Corrected path (includes Chromosome.mqh and ENUM_OPTIMIZATION_CRITERION)
 
 //--- Input Parameters ---
 // Trading Parameters
@@ -78,8 +78,7 @@ int OnInit()
        Print("Warning: GA Population size is very small (", InpGaPopulationSize, "). Consider increasing.");
    }
    if(InpGaGenerations < 1) {
-       Print("Warning: GA Generations is less than 1. Setting to 1.");
-       InpGaGenerations = 1;
+       Print("Warning: GA Generations is less than 1. Evolution might not be effective.");
    }
 
 
@@ -111,12 +110,12 @@ int OnInit()
       return(INIT_FAILED);
     }
    // Set initial parameters from inputs
-   g_best_params.SetShortPeriod(InpInitialShortSmaPeriod);
-   g_best_params.SetLongPeriod(InpInitialLongSmaPeriod);
-   g_best_params.SetFitness(-DBL_MAX); // Start with worst fitness
+   g_best_params->SetShortPeriod(InpInitialShortSmaPeriod); // Use ->
+   g_best_params->SetLongPeriod(InpInitialLongSmaPeriod);  // Use ->
+   g_best_params->SetFitness(-DBL_MAX); // Use -> // Start with worst fitness
 
    //--- Initialize Trader ---
-   if(!g_trader.Init(InpInitialShortSmaPeriod, InpInitialLongSmaPeriod, InpLotSize, InpMagicNumber,
+   if(!g_trader->Init(InpInitialShortSmaPeriod, InpInitialLongSmaPeriod, InpLotSize, InpMagicNumber, // Use ->
                      _Symbol, _Period, InpStopLossPips, InpTakeProfitPips, InpMaxSpreadPoints))
      {
       Print("Error: Failed to initialize CSmaTrader object!");
@@ -147,7 +146,7 @@ int OnInit()
    Print("Evolving SMA Crossover EA Initialized Successfully.");
    g_last_evolution_time = TimeCurrent(); // Record init time as last evolution time initially
    //---
-   return(INIT_OK);
+   return(INIT_SUCCEEDED); // Ensure this is INIT_SUCCEEDED
   }
 //+------------------------------------------------------------------+
 //| Expert deinitialization function                                 |
@@ -198,12 +197,12 @@ void OnTick()
 
 
    //--- Check Trading Signal ---
-   ENUM_TRADE_SIGNAL signal = g_trader.CheckSignal();
+   ENUM_TRADE_SIGNAL signal = g_trader->CheckSignal(); // Use ->
 
    //--- Execute Signal ---
    if(signal != SIGNAL_NONE)
      {
-       g_trader.ExecuteSignal(signal);
+       g_trader->ExecuteSignal(signal); // Use ->
      }
    //---
   }
@@ -230,37 +229,39 @@ void OnTimer()
 
        // --- Run GA Evolution ---
        Print("Starting GA evolution cycle...");
-       CChromosome *result = g_ga.RunEvolution(); // This can take time!
+       CChromosome *result = g_ga->RunEvolution(); // Use -> // This can take time!
 
         if(CheckPointer(result) != POINTER_INVALID)
         {
            // --- Compare with current best and update trader if improved ---
            bool update_needed = false;
-           double new_fitness = result.GetFitness();
-           double old_fitness = g_best_params.GetFitness();
+           double new_fitness = result->GetFitness(); // Use ->
+           double old_fitness = g_best_params->GetFitness(); // Use ->
 
            if(InpGaOptimizationCriterion == CRITERION_MAX_DRAWDOWN) { // Minimization
                // Update if new fitness is significantly lower (e.g., by 1%) to avoid chasing noise
-               if (new_fitness < old_fitness * 0.99) update_needed = true;
+               if (new_fitness < old_fitness * 0.99 && MathIsValidNumber(old_fitness) && old_fitness != DBL_MAX) update_needed = true; // Added checks
+               else if (!MathIsValidNumber(old_fitness) || old_fitness == DBL_MAX) update_needed = true; // Update if old fitness was invalid/initial
            } else { // Maximization
                // Update if new fitness is significantly higher (e.g., by 1%)
-               if (new_fitness > old_fitness * 1.01) update_needed = true;
+               if (new_fitness > old_fitness * 1.01 && MathIsValidNumber(old_fitness) && old_fitness != -DBL_MAX) update_needed = true; // Added checks
+               else if (!MathIsValidNumber(old_fitness) || old_fitness == -DBL_MAX) update_needed = true; // Update if old fitness was invalid/initial
            }
 
-           // Also update if the initial parameters haven't been evaluated yet
-           if (old_fitness <= -DBL_MAX || old_fitness >= DBL_MAX) update_needed = true;
+           // Also update if the initial parameters haven't been evaluated yet (redundant with checks above, but safe)
+           // if (old_fitness <= -DBL_MAX || old_fitness >= DBL_MAX) update_needed = true;
 
 
-           if(update_needed)
+           if(update_needed && MathIsValidNumber(new_fitness)) // Ensure new fitness is valid before updating
            {
                 PrintFormat("GA found improved parameters! Old Fitness: %.4f, New Fitness: %.4f", old_fitness, new_fitness);
-                PrintFormat("Updating trader with Short=%d, Long=%d", result.GetShortPeriod(), result.GetLongPeriod());
+                PrintFormat("Updating trader with Short=%d, Long=%d", result->GetShortPeriod(), result->GetLongPeriod()); // Use -> for result
 
                 // Update the global best parameters tracker
-                g_best_params.Copy(result);
+                g_best_params->Copy(result); // Use ->
 
                 // Update the trader's active parameters
-                if(!g_trader.UpdateParameters(result.GetShortPeriod(), result.GetLongPeriod()))
+                if(!g_trader->UpdateParameters(result->GetShortPeriod(), result->GetLongPeriod())) // Use -> for g_trader and result
                 {
                    Print("Error: Failed to update trader parameters after optimization!");
                    // Consider how to handle this - revert? stop?
@@ -278,8 +279,11 @@ void OnTimer()
        Print("GA evolution cycle complete.");
 
         // Re-set the timer for the next interval
-        EventSetTimer(frequency_seconds);
-        PrintFormat("Next evolution scheduled in %d minutes.", InpEvolutionFrequencyMinutes);
+        if(frequency_seconds > 0) // Only reset if frequency is valid
+        {
+            EventSetTimer(frequency_seconds);
+            PrintFormat("Next evolution scheduled in %d minutes.", InpEvolutionFrequencyMinutes);
+        }
 
     } // End if time for evolution
 
@@ -290,12 +294,12 @@ void OnTimer()
    if(timer_id == TRADE_CHECK_TIMER_EVENT)
    {
        // Check Trading Signal
-       ENUM_TRADE_SIGNAL signal = g_trader.CheckSignal();
+       ENUM_TRADE_SIGNAL signal = g_trader->CheckSignal();
 
        // Execute Signal
        if(signal != SIGNAL_NONE)
        {
-           g_trader.ExecuteSignal(signal);
+           g_trader->ExecuteSignal(signal);
        }
    }
    */

@@ -6,7 +6,7 @@
 #property copyright "Copyright 2025, Jivita by Malinda Rasingolla"
 #property version   "1.00"
 
-#include <Trade\Trade.mqh> // Include standard trading class
+#include <Trade/Trade.mqh>
 
 //--- Signal enum
 enum ENUM_TRADE_SIGNAL

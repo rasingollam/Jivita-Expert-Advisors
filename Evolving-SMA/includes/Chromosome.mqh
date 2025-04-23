@@ -174,11 +174,12 @@ void CChromosome::Copy(CChromosome *source)
    if(CheckPointer(source) == POINTER_INVALID)
       return;
 
-   m_short_period = source.GetShortPeriod();
-   m_long_period = source.GetLongPeriod();
-   m_fitness = source.GetFitness();
-   m_min_period = source.m_min_period; // Copy constraints too
-   m_max_period = source.m_max_period;
-   m_period_diff_min = source.m_period_diff_min;
+   // Use direct member access with arrow operator
+   m_short_period = source->m_short_period;
+   m_long_period = source->m_long_period;
+   m_fitness = source->m_fitness;
+   m_min_period = source->m_min_period;
+   m_max_period = source->m_max_period;
+   m_period_diff_min = source->m_period_diff_min;
   }
 //+------------------------------------------------------------------+

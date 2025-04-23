@@ -9,6 +9,7 @@
 #include "Chromosome.mqh"
 
 //--- Optimization criteria enum (matches Strategy Tester options for potential consistency)
+//--- Moved outside the class definition ---
 enum ENUM_OPTIMIZATION_CRITERION
   {
    CRITERION_BALANCE,       // Max balance
@@ -18,6 +19,7 @@ enum ENUM_OPTIMIZATION_CRITERION
    CRITERION_SHARPE_RATIO,  // Max Sharpe Ratio
    // Add others if needed
   };
+
 //+------------------------------------------------------------------+
 //| Manages the population and evolution process                     |
 //+------------------------------------------------------------------+
@@ -35,7 +37,7 @@ private:
    int               m_fitness_history_bars; // How many bars back to check for fitness
    string            m_symbol;
    ENUM_TIMEFRAMES   m_timeframe;
-   ENUM_OPTIMIZATION_CRITERION m_criterion;
+   ENUM_OPTIMIZATION_CRITERION m_criterion; // Uses the enum defined above
    CChromosome      *m_best_chromosome;    // Stores the best overall found
 
    //--- Internal GA structures
@@ -170,14 +172,14 @@ void CGeneticAlgorithm::InitializePopulation(void)
          Print("GA Error: Failed to allocate memory for chromosome ", i);
          continue; // Skip if allocation failed
         }
-      m_population[i].InitRandom();
+      m_population[i]->InitRandom(); // Ensure -> is used
       // Optional: Print initial individuals
-      // PrintFormat("Initial %d: Short=%d, Long=%d", i, m_population[i].GetShortPeriod(), m_population[i].GetLongPeriod());
+      // PrintFormat("Initial %d: Short=%d, Long=%d", i, m_population[i]->GetShortPeriod(), m_population[i]->GetLongPeriod()); // Ensure -> is used
      }
    // Initialize best chromosome with the first one initially
    if(m_population_size > 0 && CheckPointer(m_population[0]) == POINTER_DYNAMIC)
-     m_best_chromosome.Copy(m_population[0]);
-   m_best_chromosome.SetFitness(-DBL_MAX); // Ensure first evaluation finds a better one
+     m_best_chromosome->Copy(m_population[0]); // Ensure -> is used
+   m_best_chromosome->SetFitness(-DBL_MAX); // Ensure -> is used
    Print("GA: Population Initialized.");
   }
 //+------------------------------------------------------------------+
@@ -197,7 +199,7 @@ void CGeneticAlgorithm::EvaluatePopulation(void)
       if(CheckPointer(m_population[i]) == POINTER_INVALID) continue;
 
       double fitness = CalculateFitness(m_population[i]);
-      m_population[i].SetFitness(fitness);
+      m_population[i]->SetFitness(fitness); // Ensure -> is used
       m_total_fitness += fitness; // Note: This sum isn't directly useful for tournament selection
 
       // Track best in current population
@@ -216,18 +218,18 @@ void CGeneticAlgorithm::EvaluatePopulation(void)
       // Check against overall best found so far
       bool is_overall_better = false;
        if(m_criterion == CRITERION_MAX_DRAWDOWN) { // Minimization
-           if(fitness < m_best_chromosome.GetFitness()) is_overall_better = true;
+           if(fitness < m_best_chromosome->GetFitness()) is_overall_better = true; // Ensure -> is used
        } else { // Maximization (default)
-           if(fitness > m_best_chromosome.GetFitness()) is_overall_better = true;
+           if(fitness > m_best_chromosome->GetFitness()) is_overall_better = true; // Ensure -> is used
        }
 
        if(is_overall_better) {
-           m_best_chromosome.Copy(m_population[i]); // Update overall best
-           // PrintFormat("GA: New overall best found! Fitness=%.2f, Short=%d, Long=%d", fitness, m_population[i].GetShortPeriod(), m_population[i].GetLongPeriod());
+           m_best_chromosome->Copy(m_population[i]); // Ensure -> is used
+           // PrintFormat("GA: New overall best found! Fitness=%.2f, Short=%d, Long=%d", fitness, m_population[i]->GetShortPeriod(), m_population[i]->GetLongPeriod()); // Ensure -> is used
        }
      }
     // Optional: Print best of this generation
-    // if(best_index_in_pop != -1) PrintFormat("GA: Gen Best: Fitness=%.2f, Short=%d, Long=%d", best_fitness_in_pop, m_population[best_index_in_pop].GetShortPeriod(), m_population[best_index_in_pop].GetLongPeriod());
+    // if(best_index_in_pop != -1) PrintFormat("GA: Gen Best: Fitness=%.2f, Short=%d, Long=%d", best_fitness_in_pop, m_population[best_index_in_pop]->GetShortPeriod(), m_population[best_index_in_pop]->GetLongPeriod()); // Ensure -> is used
    Print("GA: Fitness Evaluation Complete.");
   }
 //+------------------------------------------------------------------+
@@ -237,8 +239,8 @@ double CGeneticAlgorithm::CalculateFitness(CChromosome *chromosome)
   {
    if(CheckPointer(chromosome) == POINTER_INVALID) return (m_criterion == CRITERION_MAX_DRAWDOWN ? DBL_MAX : -DBL_MAX); // Worst possible fitness
 
-   int short_p = chromosome.GetShortPeriod();
-   int long_p = chromosome.GetLongPeriod();
+   int short_p = chromosome->GetShortPeriod();
+   int long_p = chromosome->GetLongPeriod();
 
    // --- SIMULATED BACKTEST ---
    // This is a placeholder for performance reasons. A real implementation
@@ -445,9 +447,9 @@ CChromosome *CGeneticAlgorithm::TournamentSelection(int tournament_size = 5)
         {
              bool candidate_is_better = false;
               if(m_criterion == CRITERION_MAX_DRAWDOWN) { // Minimization
-                  if(candidate.GetFitness() < best_in_tournament.GetFitness()) candidate_is_better = true;
+                  if(candidate->GetFitness() < best_in_tournament->GetFitness()) candidate_is_better = true; // Ensure -> is used
               } else { // Maximization (default)
-                  if(candidate.GetFitness() > best_in_tournament.GetFitness()) candidate_is_better = true;
+                  if(candidate->GetFitness() > best_in_tournament->GetFitness()) candidate_is_better = true; // Ensure -> is used
               }
 
               if (candidate_is_better) {
@@ -498,8 +500,8 @@ void CGeneticAlgorithm::Crossover(CChromosome *parent1, CChromosome *parent2, CC
     {
         Print("GA Error: Invalid pointers passed to Crossover.");
         // Optionally copy parents directly if crossover fails due to bad pointers
-        if(CheckPointer(child1) != POINTER_INVALID && CheckPointer(parent1) != POINTER_INVALID) child1.Copy(parent1);
-        if(CheckPointer(child2) != POINTER_INVALID && CheckPointer(parent2) != POINTER_INVALID) child2.Copy(parent2);
+        if(CheckPointer(child1) != POINTER_INVALID && CheckPointer(parent1) != POINTER_INVALID) child1->Copy(parent1); // Ensure -> is used
+        if(CheckPointer(child2) != POINTER_INVALID && CheckPointer(parent2) != POINTER_INVALID) child2->Copy(parent2); // Ensure -> is used
         return;
     }
 
@@ -508,22 +510,27 @@ void CGeneticAlgorithm::Crossover(CChromosome *parent1, CChromosome *parent2, CC
      {
       // Simple single-point crossover for the two parameters
       // Swap the long periods between the two children
-      child1.SetShortPeriod(parent1.GetShortPeriod());
-      child1.SetLongPeriod(parent2.GetLongPeriod()); // Gets long from parent 2
+      // Set periods - the setter methods should handle validation internally
+      child1->SetShortPeriod(parent1->GetShortPeriod()); // Ensure -> is used
+      child1->SetLongPeriod(parent2->GetLongPeriod()); // Ensure -> is used // Gets long from parent 2
 
-      child2.SetShortPeriod(parent2.GetShortPeriod());
-      child2.SetLongPeriod(parent1.GetLongPeriod()); // Gets long from parent 1
+      child2->SetShortPeriod(parent2->GetShortPeriod()); // Ensure -> is used
+      child2->SetLongPeriod(parent1->GetLongPeriod()); // Ensure -> is used // Gets long from parent 1
 
-      // Validate children to ensure long > short + min_diff
-      child1.ValidatePeriods();
-      child2.ValidatePeriods();
+      // Make sure long periods are always greater than short + min_diff
+      // (using public setters instead of private ValidatePeriods method)
+      if(child1->GetLongPeriod() <= child1->GetShortPeriod() + m_period_diff_min)
+         child1->SetLongPeriod(child1->GetShortPeriod() + m_period_diff_min);
+         
+      if(child2->GetLongPeriod() <= child2->GetShortPeriod() + m_period_diff_min)
+         child2->SetLongPeriod(child2->GetShortPeriod() + m_period_diff_min);
 
      }
    else
      {
       // No crossover, children are clones of parents
-      child1.Copy(parent1);
-      child2.Copy(parent2);
+      child1->Copy(parent1); // Ensure -> is used
+      child2->Copy(parent2); // Ensure -> is used
      }
   }
 //+------------------------------------------------------------------+
@@ -534,7 +541,7 @@ void CGeneticAlgorithm::Mutation(void)
    for(int i = 0; i < m_population_size; i++)
      {
       if(CheckPointer(m_new_population[i]) == POINTER_INVALID) continue;
-      m_new_population[i].Mutate(m_mutation_rate);
+      m_new_population[i]->Mutate(m_mutation_rate); // Ensure -> is used
       // Validation is handled within CChromosome::Mutate via Setters
      }
   }
@@ -574,9 +581,9 @@ void CGeneticAlgorithm::EvolveGeneration(void)
         } else {
             // Handle error case (e.g., copy parents if selection/allocation failed)
             if(CheckPointer(m_new_population[child_idx1]) != POINTER_INVALID && CheckPointer(parent1) != POINTER_INVALID)
-                m_new_population[child_idx1].Copy(parent1);
+                m_new_population[child_idx1]->Copy(parent1); // Ensure -> is used
             if(CheckPointer(m_new_population[child_idx2]) != POINTER_INVALID && CheckPointer(parent2) != POINTER_INVALID)
-                m_new_population[child_idx2].Copy(parent2);
+                m_new_population[child_idx2]->Copy(parent2); // Ensure -> is used
         }
      }
 
@@ -593,7 +600,7 @@ void CGeneticAlgorithm::EvolveGeneration(void)
    // Optional: Clear fitness of the now-current population as it needs re-evaluation
    for(int i=0; i<m_population_size; ++i) {
       if(CheckPointer(m_population[i]) != POINTER_INVALID)
-         m_population[i].SetFitness(m_criterion == CRITERION_MAX_DRAWDOWN ? DBL_MAX : -DBL_MAX);
+         m_population[i]->SetFitness(m_criterion == CRITERION_MAX_DRAWDOWN ? DBL_MAX : -DBL_MAX); // Ensure -> is used
    }
 
   }
@@ -615,7 +622,7 @@ CChromosome* CGeneticAlgorithm::RunEvolution(void)
       // Optional: Print progress
       if((gen + 1) % 10 == 0) // Print every 10 generations
        PrintFormat("GA: Generation %d complete. Best Fitness so far: %.4f (Short: %d, Long: %d)",
-                    gen + 1, m_best_chromosome.GetFitness(), m_best_chromosome.GetShortPeriod(), m_best_chromosome.GetLongPeriod());
+                    gen + 1, m_best_chromosome->GetFitness(), m_best_chromosome->GetShortPeriod(), m_best_chromosome->GetLongPeriod()); // Ensure -> is used
 
       // Check for termination conditions (e.g., stagnation) - Not implemented here
 
@@ -629,7 +636,7 @@ CChromosome* CGeneticAlgorithm::RunEvolution(void)
      }
 
    PrintFormat("GA: Evolution finished. Best Fitness: %.4f (Short: %d, Long: %d)",
-               m_best_chromosome.GetFitness(), m_best_chromosome.GetShortPeriod(), m_best_chromosome.GetLongPeriod());
+               m_best_chromosome->GetFitness(), m_best_chromosome->GetShortPeriod(), m_best_chromosome->GetLongPeriod()); // Ensure -> is used
    return m_best_chromosome;
   }
 //+------------------------------------------------------------------+
