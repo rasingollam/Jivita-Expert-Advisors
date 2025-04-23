@@ -42,6 +42,10 @@ CTrade g_trade;                // Trading object
 datetime g_lastEvolutionTime = 0;  // Time of last evolution
 bool g_evolutionInProgress = false; // Flag to prevent overlapping runs
 
+// Additional global variables for chart info
+string g_infoText = "";        // Text to display on chart
+datetime g_lastUpdateTime = 0; // Last time info was updated
+
 //--- Simple Chromosome Structure (just the core genes and fitness)
 struct SChromosome
 {
@@ -81,6 +85,9 @@ int OnInit()
       Print("Evolution timer set. Evolution will run every ", Inp_EvolutionMinutes, " minutes.");
    }
    
+   // Update chart comment with initial period info
+   UpdateChartComment();
+   
    Print("Simple SMA Evolution EA initialized successfully.");
    Print("Initial SMA periods: Short=", g_shortPeriod, ", Long=", g_longPeriod);
    return INIT_SUCCEEDED;
@@ -99,6 +106,9 @@ void OnDeinit(const int reason)
    
    // Kill timer
    EventKillTimer();
+   
+   // Clear chart comment
+   Comment("");
    
    Print("EA deinitialized. Reason: ", reason);
 }
@@ -120,6 +130,13 @@ void OnTick()
    // Check trading conditions and execute
    int signal = CheckSignal();
    if(signal != 0) ExecuteSignal(signal);
+   
+   // Update chart comment periodically (every 10 seconds)
+   datetime current_time = TimeCurrent();
+   if(current_time - g_lastUpdateTime > 10) {
+      UpdateChartComment();
+      g_lastUpdateTime = current_time;
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -168,7 +185,7 @@ bool CreateIndicators()
    if(g_handle_short != INVALID_HANDLE) IndicatorRelease(g_handle_short);
    if(g_handle_long != INVALID_HANDLE) IndicatorRelease(g_handle_long);
    
-   // Create new handles
+   // Create new handles with hidden visualization
    g_handle_short = iMA(_Symbol, _Period, g_shortPeriod, 0, MODE_SMA, PRICE_CLOSE);
    g_handle_long = iMA(_Symbol, _Period, g_longPeriod, 0, MODE_SMA, PRICE_CLOSE);
    
@@ -176,6 +193,14 @@ bool CreateIndicators()
       Print("Error: Failed to create indicator handles. Error code: ", GetLastError());
       return false;
    }
+   
+   // Set visualization to hidden (disable plotting on chart)
+   // This makes the EA less processing intensive
+   ChartIndicatorDelete(0, 0, "Moving Average(" + string(g_shortPeriod) + ")");
+   ChartIndicatorDelete(0, 0, "Moving Average(" + string(g_longPeriod) + ")");
+   
+   // Update chart comment after creating indicators
+   UpdateChartComment();
    
    return true;
 }
@@ -488,7 +513,7 @@ double SimulateSMA(int short_period, int long_period)
    // Verify parameters
    if(short_period <= 0 || long_period <= short_period) return -1000000;
    
-   // Create temporary indicator handles
+   // Create temporary indicator handles WITHOUT PLOTTING (more efficient)
    int temp_short = iMA(_Symbol, _Period, short_period, 0, MODE_SMA, PRICE_CLOSE);
    int temp_long = iMA(_Symbol, _Period, long_period, 0, MODE_SMA, PRICE_CLOSE);
    
@@ -497,6 +522,10 @@ double SimulateSMA(int short_period, int long_period)
       if(temp_long != INVALID_HANDLE) IndicatorRelease(temp_long);
       return -1000000;
    }
+   
+   // Remove charts to reduce processing load
+   ChartIndicatorDelete(0, 0, "Moving Average(" + string(short_period) + ")");
+   ChartIndicatorDelete(0, 0, "Moving Average(" + string(long_period) + ")");
    
    // Get historical data
    MqlRates rates[];
@@ -583,5 +612,33 @@ double SimulateSMA(int short_period, int long_period)
    // - maximum drawdown, etc.
    
    return fitness;
+}
+
+//+------------------------------------------------------------------+
+//| Update chart comment with current SMA periods and time            |
+//+------------------------------------------------------------------+
+void UpdateChartComment()
+{
+   string time_str = TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES|TIME_SECONDS);
+   
+   g_infoText = "SimpleSmaEvolution EA - Last Updated: " + time_str + "\n";
+   g_infoText += "SMA Periods: Short=" + IntegerToString(g_shortPeriod) + 
+                 ", Long=" + IntegerToString(g_longPeriod) + "\n";
+   
+   if(Inp_EvolutionMinutes > 0) {
+      datetime next_evo = g_lastEvolutionTime + Inp_EvolutionMinutes * 60;
+      datetime time_left = next_evo - TimeCurrent();
+      int mins = (int)(time_left / 60);
+      int secs = (int)(time_left % 60);
+      g_infoText += "Next Evolution: " + IntegerToString(mins) + "m " + IntegerToString(secs) + "s";
+      
+      if(g_evolutionInProgress) {
+         g_infoText += " (Evolution in progress...)";
+      }
+   } else {
+      g_infoText += "Evolution disabled";
+   }
+   
+   Comment(g_infoText);
 }
 //+------------------------------------------------------------------+
