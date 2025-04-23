@@ -3,7 +3,7 @@
 //|                                          Copyright 2025, Jivita  |
 //|                                           by Malinda Rasingolla  |
 //+------------------------------------------------------------------+
-#property copyright "Copyright 2023, Jivita by Malinda Rasingolla"
+#property copyright "Copyright 2025, Jivita by Malinda Rasingolla"
 #property version   "1.00"
 #property description "Expert Advisor that trades on ATR Bands Touch signals"
 
