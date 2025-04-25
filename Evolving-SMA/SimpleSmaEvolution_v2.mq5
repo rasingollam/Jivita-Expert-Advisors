@@ -41,9 +41,9 @@ input int              Inp_TestBars = 500;          // Bars for fitness simulati
 input group           "Risk Management Evolution"
 input bool             Inp_EvolveRiskParams = true; // Evolve SL/TP parameters
 input int              Inp_MinStopLoss = 20;        // Min Stop Loss (pips)
-input int              Inp_MaxStopLoss = 150;       // Max Stop Loss (pips)
+input int              Inp_MaxStopLoss = 100;       // Max Stop Loss (pips) // REDUCED FROM 150
 input int              Inp_MinTakeProfit = 20;      // Min Take Profit (pips)
-input int              Inp_MaxTakeProfit = 300;     // Max Take Profit (pips)
+input int              Inp_MaxTakeProfit = 200;     // Max Take Profit (pips) // REDUCED FROM 300
 input double           Inp_MinRiskReward = 0.5;     // Min Risk:Reward ratio
 input double           Inp_MaxRiskReward = 5.0;     // Max Risk:Reward ratio
 
@@ -137,11 +137,11 @@ int OnInit()
       return INIT_PARAMETERS_INCORRECT;
    }
    
-   // Setup trading parameters
+   // Setup trading parameters - Fix potential issue with SL/TP values
    g_shortPeriod = Inp_ShortPeriod;
    g_longPeriod = Inp_LongPeriod;
-   g_stopLossPips = Inp_StopLossPips;
-   g_takeProfitPips = Inp_TakeProfitPips;
+   g_stopLossPips = Inp_StopLossPips;  // Make sure this is not overridden elsewhere
+   g_takeProfitPips = Inp_TakeProfitPips;  // Make sure this is not overridden elsewhere
    g_trade.SetExpertMagicNumber(Inp_MagicNumber);
    
    // Create indicator handles
@@ -830,16 +830,530 @@ bool RunEvolution(SChromosome &best_result)
       Print("Insufficient real trade data. Using simulation only.");
    }
    
-   // Initialize population with current parameters as one member
-   SChromosome current;
-   current.short_period = g_shortPeriod;
-   current.long_period = g_longPeriod;
-   current.stop_loss_pips = g_stopLossPips;
-   current.take_profit_pips = g_takeProfitPips;
+   // Initialize population
+   SChromosome population[];
+   ArrayResize(population, Inp_PopulationSize);
    
-   // For simplicity in this fix, just return the current parameters
-   // In a real implementation, this would run the genetic algorithm
-   best_result = current;
-   return true;
+   // Create initial random population
+   for(int i = 0; i < Inp_PopulationSize; i++) {
+      // Generate SMA periods
+      population[i].short_period = RandomPeriod(Inp_MinPeriod, Inp_MaxPeriod - Inp_MinDiff);
+      population[i].long_period = population[i].short_period + Inp_MinDiff + 
+                               RandomPeriod(0, Inp_MaxPeriod - population[i].short_period - Inp_MinDiff);
+                               
+      // Generate SL/TP parameters if enabled
+      if(Inp_EvolveRiskParams) {
+         population[i].stop_loss_pips = RandomPeriod(Inp_MinStopLoss, Inp_MaxStopLoss);
+         
+         // Generate TP based on SL and RR ratio
+         double min_tp = population[i].stop_loss_pips * Inp_MinRiskReward;
+         double max_tp = population[i].stop_loss_pips * Inp_MaxRiskReward;
+         
+         // Ensure TP is within the overall constraints
+         min_tp = MathMax(min_tp, Inp_MinTakeProfit);
+         max_tp = MathMin(max_tp, Inp_MaxTakeProfit);
+         
+         population[i].take_profit_pips = RandomPeriod((int)min_tp, (int)max_tp);
+      } else {
+         // Use current SL/TP 
+         population[i].stop_loss_pips = g_stopLossPips;
+         population[i].take_profit_pips = g_takeProfitPips;
+      }
+      
+      population[i].fitness = -1000000; // Initial worst fitness
+   }
+   
+   // Add current parameters as one individual
+   int current_idx = Inp_PopulationSize - 1; // Replace last one
+   population[current_idx].short_period = g_shortPeriod;
+   population[current_idx].long_period = g_longPeriod;
+   population[current_idx].stop_loss_pips = g_stopLossPips;
+   population[current_idx].take_profit_pips = g_takeProfitPips;
+   
+   // Track best solution
+   SChromosome best;
+   best.short_period = g_shortPeriod;
+   best.long_period = g_longPeriod;
+   best.stop_loss_pips = g_stopLossPips;
+   best.take_profit_pips = g_takeProfitPips;
+   best.fitness = -1000000;
+   
+   // Evaluate initial population
+   EvaluatePopulation(population, useRealTradeData);
+   
+   // Find initial best
+   FindBest(population, best);
+   
+   if(Inp_EvolveRiskParams) {
+      PrintFormat("Initial best: Short=%d, Long=%d, SL=%d, TP=%d, Fitness=%.4f", 
+                best.short_period, best.long_period, 
+                best.stop_loss_pips, best.take_profit_pips, best.fitness);
+   } else {
+      PrintFormat("Initial best: Short=%d, Long=%d, Fitness=%.4f", 
+                best.short_period, best.long_period, best.fitness);
+   }
+   
+   // Run generations
+   for(int gen = 0; gen < Inp_Generations; gen++) {
+      // Create next generation through crossover and mutation
+      SChromosome offspring[];
+      ArrayResize(offspring, Inp_PopulationSize);
+      
+      // Elitism - keep the best solution
+      offspring[0] = best;
+      
+      // Create rest of population through selection, crossover, mutation
+      for(int i = 1; i < Inp_PopulationSize; i++) {
+         // Select parents (tournament selection)
+         int p1_idx = TournamentSelect(population);
+         int p2_idx = TournamentSelect(population);
+         
+         // Crossover
+         if(MathRand() / 32767.0 < 0.7) { // 70% crossover rate
+            // Simple crossover - swap parameters
+            offspring[i].short_period = population[p1_idx].short_period;
+            offspring[i].long_period = population[p2_idx].long_period;
+            
+            if(Inp_EvolveRiskParams) {
+               // Also crossover SL/TP parameters
+               offspring[i].stop_loss_pips = population[p1_idx].stop_loss_pips;
+               offspring[i].take_profit_pips = population[p2_idx].take_profit_pips;
+            } else {
+               // Keep current SL/TP
+               offspring[i].stop_loss_pips = g_stopLossPips;
+               offspring[i].take_profit_pips = g_takeProfitPips;
+            }
+            
+            // Ensure long > short + min_diff
+            if(offspring[i].long_period <= offspring[i].short_period + Inp_MinDiff) {
+               offspring[i].long_period = offspring[i].short_period + Inp_MinDiff;
+            }
+         } else {
+            // No crossover, just copy one parent
+            offspring[i] = population[p1_idx];
+         }
+         
+         // Mutation
+         MutateChromosome(offspring[i]);
+      }
+      
+      // Evaluate new generation
+      EvaluatePopulation(offspring, useRealTradeData);
+      
+      // Find best in new generation
+      SChromosome gen_best;
+      gen_best.fitness = -1000000;
+      FindBest(offspring, gen_best);
+      
+      // Update best if generation's best is better
+      if(gen_best.fitness > best.fitness) {
+         best = gen_best;
+         
+         if(Inp_EvolveRiskParams) {
+            PrintFormat("Gen %d: New best! Short=%d, Long=%d, SL=%d, TP=%d, Fitness=%.4f", 
+                     gen+1, best.short_period, best.long_period, 
+                     best.stop_loss_pips, best.take_profit_pips, best.fitness);
+         } else {
+            PrintFormat("Gen %d: New best! Short=%d, Long=%d, Fitness=%.4f", 
+                     gen+1, best.short_period, best.long_period, best.fitness);
+         }
+      }
+      
+      // Replace population with offspring
+      ArrayCopy(population, offspring);
+   }
+   
+   // Check if we found better parameters than current
+   bool improvement = false;
+   
+   // Always check SMA periods
+   if(best.short_period != g_shortPeriod || best.long_period != g_longPeriod)
+      improvement = true;
+      
+   // Check SL/TP only if we're evolving risk params
+   if(Inp_EvolveRiskParams && 
+      (best.stop_loss_pips != g_stopLossPips || best.take_profit_pips != g_takeProfitPips))
+      improvement = true;
+      
+   if(best.fitness > -1000000 && improvement) {
+      best_result = best;
+      return true;
+   }
+   
+   return false; // No improvement found
 }
+
 //+------------------------------------------------------------------+
+//| Tournament selection for GA                                      |
+//+------------------------------------------------------------------+
+int TournamentSelect(SChromosome &population[])
+{
+   int pop_size = ArraySize(population);
+   int tournament_size = 3; // Select from 3 random candidates
+   int best_idx = MathRand() % pop_size;
+   double best_fitness = population[best_idx].fitness;
+   
+   for(int i = 1; i < tournament_size; i++) {
+      int idx = MathRand() % pop_size;
+      if(population[idx].fitness > best_fitness) {
+         best_idx = idx;
+         best_fitness = population[idx].fitness;
+      }
+   }
+   
+   return best_idx;
+}
+
+//+------------------------------------------------------------------+
+//| Find best chromosome in a population                             |
+//+------------------------------------------------------------------+
+void FindBest(SChromosome &population[], SChromosome &best)
+{
+   int size = ArraySize(population);
+   
+   for(int i = 0; i < size; i++) {
+      if(population[i].fitness > best.fitness) {
+         best = population[i];
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Generate a random period within specified range                  |
+//+------------------------------------------------------------------+
+int RandomPeriod(int min_val, int max_val)
+{
+   if(max_val <= min_val) return min_val;
+   return min_val + MathRand() % (max_val - min_val + 1);
+}
+
+//+------------------------------------------------------------------+
+//| Evaluate fitness of a population                                 |
+//+------------------------------------------------------------------+
+void EvaluatePopulation(SChromosome &population[], bool useRealTradeData)
+{
+   int size = ArraySize(population);
+   
+   for(int i = 0; i < size; i++) {
+      // Simulate on historical data
+      double simFitness = SimulateSMA(
+         population[i].short_period, 
+         population[i].long_period,
+         population[i].stop_loss_pips, 
+         population[i].take_profit_pips
+      );
+      
+      // Blend with real trade performance if enabled and data available
+      if(useRealTradeData && Inp_RealTradeProfitWeight > 0) {
+         double realFitness = EvaluateRealPerformance(
+            population[i].short_period, 
+            population[i].long_period,
+            population[i].stop_loss_pips, 
+            population[i].take_profit_pips
+         );
+         
+         population[i].fitness = (simFitness * (1.0 - Inp_RealTradeProfitWeight)) + 
+                               (realFitness * Inp_RealTradeProfitWeight);
+      } else {
+         population[i].fitness = simFitness;
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Mutate a chromosome based on mutation rate                       |
+//+------------------------------------------------------------------+
+void MutateChromosome(SChromosome &chromosome)
+{
+   // Mutate short period
+   if(MathRand() / 32767.0 < Inp_MutationRate) {
+      int change = (MathRand() % 11) - 5; // -5 to +5
+      chromosome.short_period += change;
+      
+      // Apply constraints
+      chromosome.short_period = MathMax(Inp_MinPeriod, chromosome.short_period);
+      chromosome.short_period = MathMin(Inp_MaxPeriod - Inp_MinDiff, chromosome.short_period);
+      
+      // Ensure long period is valid
+      if(chromosome.long_period <= chromosome.short_period + Inp_MinDiff)
+         chromosome.long_period = chromosome.short_period + Inp_MinDiff;
+   }
+   
+   // Mutate long period
+   if(MathRand() / 32767.0 < Inp_MutationRate) {
+      int change = (MathRand() % 11) - 5; // -5 to +5
+      chromosome.long_period += change;
+      
+      // Apply constraints
+      chromosome.long_period = MathMax(chromosome.short_period + Inp_MinDiff, chromosome.long_period);
+      chromosome.long_period = MathMin(Inp_MaxPeriod, chromosome.long_period);
+   }
+   
+   // Only mutate risk parameters if enabled
+   if(Inp_EvolveRiskParams) {
+      // Mutate stop loss
+      if(MathRand() / 32767.0 < Inp_MutationRate) {
+         int change = (int)((MathRand() % 21) - 10); // -10 to +10 pips
+         chromosome.stop_loss_pips += change;
+         
+         // Apply constraints
+         chromosome.stop_loss_pips = MathMax(Inp_MinStopLoss, chromosome.stop_loss_pips);
+         chromosome.stop_loss_pips = MathMin(Inp_MaxStopLoss, chromosome.stop_loss_pips);
+         
+         // Adjust TP to maintain valid RR if needed
+         double current_rr = (double)chromosome.take_profit_pips / chromosome.stop_loss_pips;
+         if(current_rr < Inp_MinRiskReward || current_rr > Inp_MaxRiskReward) {
+            // Recalculate TP based on average of min/max RR
+            double target_rr = (Inp_MinRiskReward + Inp_MaxRiskReward) / 2.0;
+            chromosome.take_profit_pips = (int)(chromosome.stop_loss_pips * target_rr);
+            chromosome.take_profit_pips = MathMax(Inp_MinTakeProfit, chromosome.take_profit_pips);
+            chromosome.take_profit_pips = MathMin(Inp_MaxTakeProfit, chromosome.take_profit_pips);
+         }
+      }
+      
+      // Mutate take profit
+      if(MathRand() / 32767.0 < Inp_MutationRate) {
+         int change = (int)((MathRand() % 41) - 20); // -20 to +20 pips
+         chromosome.take_profit_pips += change;
+         
+         // Calculate min/max TP based on SL and RR constraints
+         int min_tp = (int)(chromosome.stop_loss_pips * Inp_MinRiskReward);
+         int max_tp = (int)(chromosome.stop_loss_pips * Inp_MaxRiskReward);
+         
+         // Also consider global TP constraints
+         min_tp = MathMax(min_tp, Inp_MinTakeProfit);
+         max_tp = MathMin(max_tp, Inp_MaxTakeProfit);
+         
+         // Apply constraints
+         chromosome.take_profit_pips = MathMax(min_tp, chromosome.take_profit_pips);
+         chromosome.take_profit_pips = MathMin(max_tp, chromosome.take_profit_pips);
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Simulate SMA strategy with given parameters                      |
+//+------------------------------------------------------------------+
+double SimulateSMA(int short_period, int long_period, int sl_pips, int tp_pips)
+{
+   // Verify parameters
+   if(short_period <= 0 || long_period <= short_period) return -1000000;
+   
+   // Create temporary indicator handles WITHOUT PLOTTING (more efficient)
+   int temp_short = iMA(_Symbol, _Period, short_period, 0, MODE_SMA, PRICE_CLOSE);
+   int temp_long = iMA(_Symbol, _Period, long_period, 0, MODE_SMA, PRICE_CLOSE);
+   
+   if(temp_short == INVALID_HANDLE || temp_long == INVALID_HANDLE) {
+      if(temp_short != INVALID_HANDLE) IndicatorRelease(temp_short);
+      if(temp_long != INVALID_HANDLE) IndicatorRelease(temp_long);
+      return -1000000;
+   }
+   
+   // Get historical data
+   MqlRates rates[];
+   int bars_needed = Inp_TestBars + long_period + 2;
+   if(CopyRates(_Symbol, _Period, 0, bars_needed, rates) < bars_needed) {
+      IndicatorRelease(temp_short);
+      IndicatorRelease(temp_long);
+      return -1000000;
+   }
+   
+   // Get indicator values
+   double short_buffer[];
+   double long_buffer[];
+   if(CopyBuffer(temp_short, 0, 0, bars_needed, short_buffer) < bars_needed ||
+      CopyBuffer(temp_long, 0, 0, bars_needed, long_buffer) < bars_needed) {
+      IndicatorRelease(temp_short);
+      IndicatorRelease(temp_long);
+      return -1000000;
+   }
+   
+   // Release temporary indicators
+   IndicatorRelease(temp_short);
+   IndicatorRelease(temp_long);
+   
+   // Calculate pip value for SL/TP
+   double pip_value = Point();
+   
+   // Simulation variables
+   double balance = 10000.0;
+   double profit = 0.0;
+   int trades = 0;
+   int wins = 0;
+   double max_drawdown = 0;
+   double peak_balance = balance;
+   int position = 0; // 0=flat, 1=long, -1=short
+   double entry_price = 0.0;
+   double sl_price = 0.0;
+   double tp_price = 0.0;
+   
+   // Simulate trading
+   for(int i = long_period + 1; i < Inp_TestBars; i++) {
+      // Check for crossover
+      bool cross_up = short_buffer[i-1] <= long_buffer[i-1] && short_buffer[i] > long_buffer[i];
+      bool cross_down = short_buffer[i-1] >= long_buffer[i-1] && short_buffer[i] < long_buffer[i];
+      
+      // Handle SL/TP hits
+      if(position != 0) {
+         if(position == 1) { // Long position
+            // Check for stop loss hit
+            if(sl_price > 0 && rates[i].low <= sl_price) {
+               double p = sl_price - entry_price;
+               profit += p;
+               trades++;
+               position = 0;
+               balance += p;
+            }
+            // Check for take profit hit
+            else if(tp_price > 0 && rates[i].high >= tp_price) {
+               double p = tp_price - entry_price;
+               profit += p;
+               wins++;
+               trades++;
+               position = 0;
+               balance += p;
+            }
+            // Handle signal-based exit if enabled
+            else if(Inp_CloseOnOppositeSignal && cross_down) {
+               double p = rates[i].close - entry_price;
+               profit += p;
+               if(p > 0) wins++;
+               trades++;
+               position = 0;
+               balance += p;
+            }
+         }
+         else if(position == -1) { // Short position
+            // Check for stop loss hit
+            if(sl_price > 0 && rates[i].high >= sl_price) {
+               double p = entry_price - sl_price;
+               profit += p;
+               trades++;
+               position = 0;
+               balance += p;
+            }
+            // Check for take profit hit
+            else if(tp_price > 0 && rates[i].low <= tp_price) {
+               double p = entry_price - tp_price;
+               profit += p;
+               wins++;
+               trades++;
+               position = 0;
+               balance += p;
+            }
+            // Handle signal-based exit if enabled
+            else if(Inp_CloseOnOppositeSignal && cross_up) {
+               double p = entry_price - rates[i].close;
+               profit += p;
+               if(p > 0) wins++;
+               trades++;
+               position = 0;
+               balance += p;
+            }
+         }
+         
+         // Track drawdown
+         if(balance < peak_balance) {
+            double dd = (peak_balance - balance) / peak_balance * 100.0;
+            max_drawdown = MathMax(max_drawdown, dd);
+         } else {
+            peak_balance = balance;
+         }
+      }
+      
+      // Handle position entry
+      if(position == 0) {
+         // Important: Use the corrected signal logic here (CrossUp = Sell, CrossDown = Buy)
+         if(cross_down) { // Buy signal (reversed from traditional)
+            position = 1;
+            entry_price = rates[i].close;
+            // Set SL/TP if enabled
+            if(sl_pips > 0) sl_price = entry_price - sl_pips * pip_value;
+            else sl_price = 0;
+            if(tp_pips > 0) tp_price = entry_price + tp_pips * pip_value;
+            else tp_price = 0;
+         }
+         else if(cross_up) { // Sell signal (reversed from traditional)
+            position = -1;
+            entry_price = rates[i].close;
+            // Set SL/TP if enabled
+            if(sl_pips > 0) sl_price = entry_price + sl_pips * pip_value;
+            else sl_price = 0;
+            if(tp_pips > 0) tp_price = entry_price - tp_pips * pip_value;
+            else tp_price = 0;
+         }
+      }
+   }
+   
+   // Calculate fitness value
+   double fitness = 0;
+   
+   // No trades or all losses is bad
+   if(trades == 0) return -500;
+   
+   double win_rate = (double)wins / trades;
+   double avg_profit = profit / trades;
+   
+   // Combine different metrics
+   fitness = profit * 0.4;                   // 40% weight on raw profit
+   fitness += win_rate * 1000 * 0.25;        // 25% weight on win rate
+   fitness += (100.0 - max_drawdown) * 0.25; // 25% weight on avoiding drawdown
+   fitness += trades * 0.1;                  // 10% weight on number of trades
+   
+   // Add penalty for parameters that are too far from current
+   double sma_penalty = 0.05 * (MathAbs(short_period - g_shortPeriod) + 
+                              MathAbs(long_period - g_longPeriod));
+                              
+   double risk_penalty = 0.0;
+   if(Inp_EvolveRiskParams) {
+      risk_penalty = 0.03 * (MathAbs(sl_pips - g_stopLossPips) / 10.0 + 
+                           MathAbs(tp_pips - g_takeProfitPips) / 20.0);
+   }
+   
+   fitness -= (sma_penalty + risk_penalty);
+   
+   return fitness;
+}
+
+//+------------------------------------------------------------------+
+//| Evaluate real performance impact on chromosome fitness           |
+//+------------------------------------------------------------------+
+double EvaluateRealPerformance(int short_period, int long_period, int sl_pips, int tp_pips)
+{
+   // Check for exact parameter matches in trade history
+   double total_profit = 0.0;
+   int match_count = 0;
+   
+   // Search through trade history for exact or similar parameters
+   for(int i = 0; i < ArraySize(g_tradeHistory); i++) {
+      // Calculate "similarity" score with the parameters
+      double period_similarity = 1.0 - (
+         MathAbs(g_tradeHistory[i].short_period - short_period) / (double)MathMax(short_period, 1) +
+         MathAbs(g_tradeHistory[i].long_period - long_period) / (double)MathMax(long_period, 1)
+      ) / 2.0;
+      
+      double sl_tp_similarity = 1.0;
+      if(Inp_EvolveRiskParams) {
+         sl_tp_similarity = 1.0 - (
+            MathAbs(g_tradeHistory[i].stop_loss_pips - sl_pips) / (double)MathMax(sl_pips, 1) +
+            MathAbs(g_tradeHistory[i].take_profit_pips - tp_pips) / (double)MathMax(tp_pips, 1)
+         ) / 2.0;
+      }
+      
+      double similarity = (period_similarity * 0.7) + (sl_tp_similarity * 0.3);
+      
+      // Only consider trades with reasonable similarity
+      if(similarity > 0.7) {
+         total_profit += g_tradeHistory[i].profit * similarity;
+         match_count++;
+      }
+   }
+   
+   // If we found matches, return the weighted profit
+   if(match_count > 0) {
+      return total_profit / match_count;
+   }
+   
+   // If no matching trades found, return neutral score
+   return 0.0;
+}
