@@ -4,8 +4,8 @@
 //|                                           by Malinda Rasingolla  |
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2025, Jivita by Malinda Rasingolla"
-#property version   "2.00"
-#property description "SMA Crossover with evolutionary optimization based on real trade performance"
+#property version   "2.10"
+#property description "SMA Crossover with evolutionary optimization of SMA periods, SL and TP"
 #property strict
 
 #include <Trade/Trade.mqh>
@@ -18,8 +18,8 @@ input int              Inp_LongPeriod = 30;         // Initial Long SMA Period
 input double           Inp_LotSize = 0.01;          // Fixed Lot Size (0 = use risk-based sizing)
 input double           Inp_RiskPercentage = 1.0;    // Risk percentage per trade (when lot size = 0)
 input ulong            Inp_MagicNumber = 123456;    // Magic Number
-input int              Inp_StopLossPips = 50;       // Stop Loss in pips (0=off)
-input int              Inp_TakeProfitPips = 100;    // Take Profit in pips (0=off)
+input int              Inp_StopLossPips = 50;       // Initial Stop Loss in pips (0=off)
+input int              Inp_TakeProfitPips = 100;    // Initial Take Profit in pips (0=off)
 input double           Inp_MaxSpreadPoints = 5.0;   // Max spread in points (0=off)
 
 // Genetic Algorithm Parameters
@@ -32,6 +32,16 @@ input int              Inp_Generations = 10;        // Generations per evolution
 input double           Inp_MutationRate = 0.1;      // Mutation rate (0.0-1.0)
 input int              Inp_TestBars = 500;          // Bars for fitness simulation
 
+// Risk Management Evolution Parameters
+input group           "Risk Management Evolution"
+input bool             Inp_EvolveRiskParams = true; // Evolve SL/TP parameters
+input int              Inp_MinStopLoss = 20;        // Min Stop Loss (pips)
+input int              Inp_MaxStopLoss = 150;       // Max Stop Loss (pips)
+input int              Inp_MinTakeProfit = 20;      // Min Take Profit (pips)
+input int              Inp_MaxTakeProfit = 300;     // Max Take Profit (pips)
+input double           Inp_MinRiskReward = 0.5;     // Min Risk:Reward ratio
+input double           Inp_MaxRiskReward = 5.0;     // Max Risk:Reward ratio
+
 // Evolution Settings
 input group           "Evolution Settings"
 input int              Inp_EvolutionMinutes = 60;   // Evolution frequency (minutes)
@@ -43,6 +53,8 @@ input bool             Inp_OnlyEvolveAfterLosses = false; // Only evolve after l
 // Trading state
 int g_shortPeriod = 0;         // Current short period
 int g_longPeriod = 0;          // Current long period
+int g_stopLossPips = 0;        // Current stop loss in pips
+int g_takeProfitPips = 0;      // Current take profit in pips
 int g_handle_short = INVALID_HANDLE;   // Indicator handle
 int g_handle_long = INVALID_HANDLE;    // Indicator handle
 CTrade g_trade;                // Trading object
@@ -58,6 +70,8 @@ struct TradeRecord {
    double profit;              // Profit/loss from the trade
    int short_period;           // Short SMA period used for this trade
    int long_period;            // Long SMA period used for this trade
+   int stop_loss_pips;         // Stop loss in pips
+   int take_profit_pips;       // Take profit in pips
    ENUM_POSITION_TYPE direction; // Buy or sell
    bool used_in_evolution;     // Whether this trade has been used in evolution
 };
@@ -75,11 +89,13 @@ bool g_evolveDueToLoss = false;       // Flag to trigger evolution after a loss
 string g_infoText = "";        // Text to display on chart
 datetime g_lastUpdateTime = 0; // Last time info was updated
 
-//--- Simple Chromosome Structure (just the core genes and fitness)
+//--- Simple Chromosome Structure (now including SL/TP genes)
 struct SChromosome
 {
    int short_period;      // Gene: Short SMA period
    int long_period;       // Gene: Long SMA period
+   int stop_loss_pips;    // Gene: Stop Loss in pips
+   int take_profit_pips;  // Gene: Take Profit in pips
    double fitness;        // Fitness value
 };
 
@@ -88,7 +104,7 @@ struct SChromosome
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   Print("Initializing SMA Evolution EA v2.0 with trade performance-based optimization...");
+   Print("Initializing SMA Evolution EA v2.10 with SMA, SL, and TP optimization...");
    
    // Validate inputs
    if(Inp_ShortPeriod <= 0 || Inp_LongPeriod <= Inp_ShortPeriod) {
@@ -104,6 +120,8 @@ int OnInit()
    // Setup trading parameters
    g_shortPeriod = Inp_ShortPeriod;
    g_longPeriod = Inp_LongPeriod;
+   g_stopLossPips = Inp_StopLossPips;
+   g_takeProfitPips = Inp_TakeProfitPips;
    g_trade.SetExpertMagicNumber(Inp_MagicNumber);
    
    // Create indicator handles
@@ -125,8 +143,9 @@ int OnInit()
    // Update chart comment with initial period info
    UpdateChartComment();
    
-   Print("SMA Evolution EA v2.0 initialized successfully.");
+   Print("SMA Evolution EA v2.10 initialized successfully.");
    Print("Initial SMA periods: Short=", g_shortPeriod, ", Long=", g_longPeriod);
+   Print("Initial risk parameters: SL=", g_stopLossPips, " pips, TP=", g_takeProfitPips, " pips");
    return INIT_SUCCEEDED;
 }
 
@@ -216,16 +235,28 @@ void OnTimer()
       g_evolutionInProgress = true;
       Print("Starting evolution at ", TimeToString(current_time));
       
-      // Run evolution to find better periods
+      // Run evolution to find better parameters
       SChromosome best;
       if(RunEvolution(best)) {
          // Update SMA periods if evolution successful
-         PrintFormat("Evolution complete. New periods: Short=%d, Long=%d with fitness %.4f", 
-                    best.short_period, best.long_period, best.fitness);
+         if(Inp_EvolveRiskParams) {
+            PrintFormat("Evolution complete. New parameters: Short=%d, Long=%d, SL=%d, TP=%d, Fitness=%.4f",
+                       best.short_period, best.long_period, 
+                       best.stop_loss_pips, best.take_profit_pips, best.fitness);
+         } else {
+            PrintFormat("Evolution complete. New parameters: Short=%d, Long=%d, Fitness=%.4f",
+                       best.short_period, best.long_period, best.fitness);
+         }
                     
          // Update the EA's parameters
          g_shortPeriod = best.short_period;
          g_longPeriod = best.long_period;
+         
+         // Update risk parameters if enabled
+         if(Inp_EvolveRiskParams) {
+            g_stopLossPips = best.stop_loss_pips;
+            g_takeProfitPips = best.take_profit_pips;
+         }
          
          // Recreate indicators with new periods
          CreateIndicators();
@@ -355,8 +386,8 @@ void ExecuteSignal(int signal)
             price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
             
             // Calculate stop loss price
-            sl = Inp_StopLossPips > 0 ? price - Inp_StopLossPips * Point() : 0;
-            tp = Inp_TakeProfitPips > 0 ? price + Inp_TakeProfitPips * Point() : 0;
+            sl = g_stopLossPips > 0 ? price - g_stopLossPips * Point() : 0;
+            tp = g_takeProfitPips > 0 ? price + g_takeProfitPips * Point() : 0;
             
             // Calculate position size based on risk percentage
             stopLossDistance = price - sl;
@@ -375,8 +406,8 @@ void ExecuteSignal(int signal)
             price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
             
             // Calculate stop loss price
-            sl = Inp_StopLossPips > 0 ? price + Inp_StopLossPips * Point() : 0;
-            tp = Inp_TakeProfitPips > 0 ? price - Inp_TakeProfitPips * Point() : 0;
+            sl = g_stopLossPips > 0 ? price + g_stopLossPips * Point() : 0;
+            tp = g_takeProfitPips > 0 ? price - g_takeProfitPips * Point() : 0;
             
             // Calculate position size based on risk percentage
             stopLossDistance = sl - price;
@@ -497,6 +528,8 @@ void UpdateTradeHistory()
       g_tradeHistory[idx].direction = deal_type;
       g_tradeHistory[idx].short_period = g_shortPeriod;  // Record the periods used for this trade
       g_tradeHistory[idx].long_period = g_longPeriod;
+      g_tradeHistory[idx].stop_loss_pips = g_stopLossPips;     // Record SL/TP settings too
+      g_tradeHistory[idx].take_profit_pips = g_takeProfitPips;
       g_tradeHistory[idx].used_in_evolution = false;
       
       // Update performance metrics
@@ -515,9 +548,10 @@ void UpdateTradeHistory()
       
       g_lastDealTicket = deal_ticket;
       
-      PrintFormat("Trade recorded: %s, Profit: %.2f, SMA Periods: %d/%d",
+      PrintFormat("Trade recorded: %s, Profit: %.2f, SMA: %d/%d, SL: %d, TP: %d",
                   deal_type == POSITION_TYPE_BUY ? "BUY" : "SELL",
-                  deal_profit, g_tradeHistory[idx].short_period, g_tradeHistory[idx].long_period);
+                  deal_profit, g_tradeHistory[idx].short_period, g_tradeHistory[idx].long_period,
+                  g_tradeHistory[idx].stop_loss_pips, g_tradeHistory[idx].take_profit_pips);
    }
 }
 
@@ -556,18 +590,25 @@ void LoadTradeHistory()
 }
 
 //+------------------------------------------------------------------+
-//| Calculate performance metrics for specific SMA periods           |
+//| Calculate performance metrics for specific SMA & SL/TP settings  |
 //+------------------------------------------------------------------+
-bool GetPeriodPerformance(int short_period, int long_period, double &winRate, double &profitFactor)
+bool GetParameterPerformance(int short_period, int long_period, int sl_pips, int tp_pips,
+                            double &winRate, double &profitFactor)
 {
    int win_count = 0;
    int loss_count = 0;
    double profit_sum = 0;
    double loss_sum = 0;
    
-   // Count trades with these exact periods
+   // Count trades with these exact parameters
    for(int i = 0; i < ArraySize(g_tradeHistory); i++) {
-      if(g_tradeHistory[i].short_period == short_period && g_tradeHistory[i].long_period == long_period) {
+      if(g_tradeHistory[i].short_period == short_period && 
+         g_tradeHistory[i].long_period == long_period &&
+         // Consider SL/TP match if the feature is enabled
+         (!Inp_EvolveRiskParams || 
+          (g_tradeHistory[i].stop_loss_pips == sl_pips && 
+           g_tradeHistory[i].take_profit_pips == tp_pips))) {
+           
          if(g_tradeHistory[i].profit >= 0) {
             win_count++;
             profit_sum += g_tradeHistory[i].profit;
@@ -579,7 +620,7 @@ bool GetPeriodPerformance(int short_period, int long_period, double &winRate, do
    }
    
    int total_trades = win_count + loss_count;
-   if(total_trades == 0) return false; // No trades with these periods
+   if(total_trades == 0) return false; // No trades with these parameters
    
    winRate = (double)win_count / total_trades;
    profitFactor = (loss_sum > 0) ? profit_sum / loss_sum : (profit_sum > 0 ? 10.0 : 0.0);
@@ -590,37 +631,53 @@ bool GetPeriodPerformance(int short_period, int long_period, double &winRate, do
 //+------------------------------------------------------------------+
 //| Evaluate real performance impact on chromosome fitness           |
 //+------------------------------------------------------------------+
-double EvaluateRealPerformance(int short_period, int long_period)
+double EvaluateRealPerformance(int short_period, int long_period, int sl_pips, int tp_pips)
 {
-   // 1. Check exact period matches
+   // 1. Check exact parameter matches
    double win_rate = 0, profit_factor = 0;
-   if(GetPeriodPerformance(short_period, long_period, win_rate, profit_factor)) {
-      // We have real data for these exact periods
+   if(GetParameterPerformance(short_period, long_period, sl_pips, tp_pips, win_rate, profit_factor)) {
+      // We have real data for these exact parameters
       return (profit_factor * 5) + (win_rate * 5); // Weight both metrics
    }
    
-   // 2. No exact matches, try similar periods within a range
-   int range = 3; // Look for periods within +/- 3
+   // 2. No exact matches, try similar parameters within a range
+   int sma_range = 3;    // Look for periods within +/- 3
+   int sl_range = 10;    // SL within +/- 10 pips
+   int tp_range = 20;    // TP within +/- 20 pips
    int match_count = 0;
    double sum_win_rate = 0;
    double sum_profit_factor = 0;
    
-   for(int s = short_period - range; s <= short_period + range; s++) {
-      for(int l = long_period - range; l <= long_period + range; l++) {
-         if(GetPeriodPerformance(s, l, win_rate, profit_factor)) {
-            // Weight inversely by distance from target periods
-            double distance = MathSqrt(MathPow(s - short_period, 2) + MathPow(l - long_period, 2));
-            double weight = 1.0 / (1.0 + distance);  // Higher weight for closer periods
-            
-            sum_win_rate += win_rate * weight;
-            sum_profit_factor += profit_factor * weight;
-            match_count++;
+   for(int s = short_period - sma_range; s <= short_period + sma_range; s++) {
+      for(int l = long_period - sma_range; l <= long_period + sma_range; l++) {
+         // Only check SL/TP ranges if the feature is enabled
+         int sl_min = Inp_EvolveRiskParams ? sl_pips - sl_range : sl_pips;
+         int sl_max = Inp_EvolveRiskParams ? sl_pips + sl_range : sl_pips;
+         int tp_min = Inp_EvolveRiskParams ? tp_pips - tp_range : tp_pips;
+         int tp_max = Inp_EvolveRiskParams ? tp_pips + tp_range : tp_pips;
+         
+         for(int sl = sl_min; sl <= sl_max; sl += 5) {
+            for(int tp = tp_min; tp <= tp_max; tp += 10) {
+               if(GetParameterPerformance(s, l, sl, tp, win_rate, profit_factor)) {
+                  // Calculate distance based on all parameters
+                  double sma_distance = MathSqrt(MathPow(s - short_period, 2) + MathPow(l - long_period, 2));
+                  double risk_distance = Inp_EvolveRiskParams ? 
+                     MathSqrt(MathPow((sl - sl_pips) / 10.0, 2) + MathPow((tp - tp_pips) / 20.0, 2)) : 0;
+                  
+                  double total_distance = sma_distance + risk_distance;
+                  double weight = 1.0 / (1.0 + total_distance);  // Higher weight for closer parameters
+                  
+                  sum_win_rate += win_rate * weight;
+                  sum_profit_factor += profit_factor * weight;
+                  match_count++;
+               }
+            }
          }
       }
    }
    
    if(match_count > 0) {
-      // Return weighted average of similar periods
+      // Return weighted average of similar parameters
       double avg_win_rate = sum_win_rate / match_count;
       double avg_profit_factor = sum_profit_factor / match_count;
       return (avg_profit_factor * 5) + (avg_win_rate * 5);
@@ -631,7 +688,7 @@ double EvaluateRealPerformance(int short_period, int long_period)
 }
 
 //+------------------------------------------------------------------+
-//| Run genetic algorithm to find optimal SMA parameters              |
+//| Run genetic algorithm to find optimal parameters                  |
 //+------------------------------------------------------------------+
 bool RunEvolution(SChromosome &best_result)
 {
@@ -650,9 +707,30 @@ bool RunEvolution(SChromosome &best_result)
    
    // Create initial random population
    for(int i = 0; i < Inp_PopulationSize; i++) {
+      // Generate SMA periods
       population[i].short_period = RandomPeriod(Inp_MinPeriod, Inp_MaxPeriod - Inp_MinDiff);
       population[i].long_period = population[i].short_period + Inp_MinDiff + 
-                                  RandomPeriod(0, Inp_MaxPeriod - population[i].short_period - Inp_MinDiff);
+                               RandomPeriod(0, Inp_MaxPeriod - population[i].short_period - Inp_MinDiff);
+                               
+      // Generate SL/TP parameters if enabled
+      if(Inp_EvolveRiskParams) {
+         population[i].stop_loss_pips = RandomPeriod(Inp_MinStopLoss, Inp_MaxStopLoss);
+         
+         // Generate TP based on SL and RR ratio
+         double min_tp = population[i].stop_loss_pips * Inp_MinRiskReward;
+         double max_tp = population[i].stop_loss_pips * Inp_MaxRiskReward;
+         
+         // Ensure TP is within the overall constraints
+         min_tp = MathMax(min_tp, Inp_MinTakeProfit);
+         max_tp = MathMin(max_tp, Inp_MaxTakeProfit);
+         
+         population[i].take_profit_pips = RandomPeriod((int)min_tp, (int)max_tp);
+      } else {
+         // Use current SL/TP 
+         population[i].stop_loss_pips = g_stopLossPips;
+         population[i].take_profit_pips = g_takeProfitPips;
+      }
+      
       population[i].fitness = -1000000; // Initial worst fitness
    }
    
@@ -660,11 +738,15 @@ bool RunEvolution(SChromosome &best_result)
    int current_idx = Inp_PopulationSize - 1; // Replace last one
    population[current_idx].short_period = g_shortPeriod;
    population[current_idx].long_period = g_longPeriod;
+   population[current_idx].stop_loss_pips = g_stopLossPips;
+   population[current_idx].take_profit_pips = g_takeProfitPips;
    
    // Track best solution
    SChromosome best;
    best.short_period = g_shortPeriod;
    best.long_period = g_longPeriod;
+   best.stop_loss_pips = g_stopLossPips;
+   best.take_profit_pips = g_takeProfitPips;
    best.fitness = -1000000;
    
    // Evaluate initial population
@@ -672,8 +754,15 @@ bool RunEvolution(SChromosome &best_result)
    
    // Find initial best
    FindBest(population, best);
-   PrintFormat("Initial best: Short=%d, Long=%d, Fitness=%.4f", 
-              best.short_period, best.long_period, best.fitness);
+   
+   if(Inp_EvolveRiskParams) {
+      PrintFormat("Initial best: Short=%d, Long=%d, SL=%d, TP=%d, Fitness=%.4f", 
+                 best.short_period, best.long_period, 
+                 best.stop_loss_pips, best.take_profit_pips, best.fitness);
+   } else {
+      PrintFormat("Initial best: Short=%d, Long=%d, Fitness=%.4f", 
+                 best.short_period, best.long_period, best.fitness);
+   }
    
    // Run generations
    for(int gen = 0; gen < Inp_Generations; gen++) {
@@ -692,9 +781,19 @@ bool RunEvolution(SChromosome &best_result)
          
          // Crossover
          if(MathRand() / 32767.0 < 0.7) { // 70% crossover rate
-            // Simple crossover - swap periods
+            // Simple crossover - swap parameters
             offspring[i].short_period = population[p1_idx].short_period;
             offspring[i].long_period = population[p2_idx].long_period;
+            
+            if(Inp_EvolveRiskParams) {
+               // Also crossover SL/TP parameters
+               offspring[i].stop_loss_pips = population[p1_idx].stop_loss_pips;
+               offspring[i].take_profit_pips = population[p2_idx].take_profit_pips;
+            } else {
+               // Keep current SL/TP
+               offspring[i].stop_loss_pips = g_stopLossPips;
+               offspring[i].take_profit_pips = g_takeProfitPips;
+            }
             
             // Ensure long > short + min_diff
             if(offspring[i].long_period <= offspring[i].short_period + Inp_MinDiff) {
@@ -720,8 +819,15 @@ bool RunEvolution(SChromosome &best_result)
       // Update best if generation's best is better
       if(gen_best.fitness > best.fitness) {
          best = gen_best;
-         PrintFormat("Gen %d: New best found! Short=%d, Long=%d, Fitness=%.4f", 
-                    gen+1, best.short_period, best.long_period, best.fitness);
+         
+         if(Inp_EvolveRiskParams) {
+            PrintFormat("Gen %d: New best! Short=%d, Long=%d, SL=%d, TP=%d, Fitness=%.4f", 
+                      gen+1, best.short_period, best.long_period, 
+                      best.stop_loss_pips, best.take_profit_pips, best.fitness);
+         } else {
+            PrintFormat("Gen %d: New best! Short=%d, Long=%d, Fitness=%.4f", 
+                      gen+1, best.short_period, best.long_period, best.fitness);
+         }
       }
       
       // Replace population with offspring
@@ -729,8 +835,18 @@ bool RunEvolution(SChromosome &best_result)
    }
    
    // Check if we found better parameters than current
-   if(best.fitness > -1000000 && 
-      (best.short_period != g_shortPeriod || best.long_period != g_longPeriod)) {
+   bool improvement = false;
+   
+   // Always check SMA periods
+   if(best.short_period != g_shortPeriod || best.long_period != g_longPeriod)
+      improvement = true;
+      
+   // Check SL/TP only if we're evolving risk params
+   if(Inp_EvolveRiskParams && 
+      (best.stop_loss_pips != g_stopLossPips || best.take_profit_pips != g_takeProfitPips))
+      improvement = true;
+      
+   if(best.fitness > -1000000 && improvement) {
       best_result = best;
       return true;
    }
@@ -747,15 +863,25 @@ void EvaluatePopulation(SChromosome &population[], bool useRealTradeData)
    
    for(int i = 0; i < size; i++) {
       // Simulate on historical data first (always do this)
-      double simFitness = SimulateSMA(population[i].short_period, population[i].long_period);
+      double simFitness = SimulateSMA(
+         population[i].short_period, 
+         population[i].long_period,
+         population[i].stop_loss_pips, 
+         population[i].take_profit_pips
+      );
       
       // Blend with real trade performance if enabled and data available
       if(useRealTradeData && Inp_RealTradeProfitWeight > 0) {
-         double realFitness = EvaluateRealPerformance(population[i].short_period, population[i].long_period);
+         double realFitness = EvaluateRealPerformance(
+            population[i].short_period, 
+            population[i].long_period,
+            population[i].stop_loss_pips, 
+            population[i].take_profit_pips
+         );
          
          // Blend the two fitness values using the weight parameter
          population[i].fitness = (simFitness * (1.0 - Inp_RealTradeProfitWeight)) + 
-                                 (realFitness * Inp_RealTradeProfitWeight);
+                               (realFitness * Inp_RealTradeProfitWeight);
       } else {
          population[i].fitness = simFitness;
       }
@@ -810,6 +936,10 @@ void MutateChromosome(SChromosome &chromosome)
       // Apply constraints
       chromosome.short_period = MathMax(Inp_MinPeriod, chromosome.short_period);
       chromosome.short_period = MathMin(Inp_MaxPeriod - Inp_MinDiff, chromosome.short_period);
+      
+      // Ensure long period is valid
+      if(chromosome.long_period <= chromosome.short_period + Inp_MinDiff)
+         chromosome.long_period = chromosome.short_period + Inp_MinDiff;
    }
    
    // Mutate long period
@@ -820,6 +950,47 @@ void MutateChromosome(SChromosome &chromosome)
       // Apply constraints
       chromosome.long_period = MathMax(chromosome.short_period + Inp_MinDiff, chromosome.long_period);
       chromosome.long_period = MathMin(Inp_MaxPeriod, chromosome.long_period);
+   }
+   
+   // Only mutate risk parameters if enabled
+   if(Inp_EvolveRiskParams) {
+      // Mutate stop loss
+      if(MathRand() / 32767.0 < Inp_MutationRate) {
+         int change = (int)((MathRand() % 21) - 10); // -10 to +10 pips
+         chromosome.stop_loss_pips += change;
+         
+         // Apply constraints
+         chromosome.stop_loss_pips = MathMax(Inp_MinStopLoss, chromosome.stop_loss_pips);
+         chromosome.stop_loss_pips = MathMin(Inp_MaxStopLoss, chromosome.stop_loss_pips);
+         
+         // Adjust TP to maintain valid RR if needed
+         double current_rr = (double)chromosome.take_profit_pips / chromosome.stop_loss_pips;
+         if(current_rr < Inp_MinRiskReward || current_rr > Inp_MaxRiskReward) {
+            // Recalculate TP based on average of min/max RR
+            double target_rr = (Inp_MinRiskReward + Inp_MaxRiskReward) / 2.0;
+            chromosome.take_profit_pips = (int)(chromosome.stop_loss_pips * target_rr);
+            chromosome.take_profit_pips = MathMax(Inp_MinTakeProfit, chromosome.take_profit_pips);
+            chromosome.take_profit_pips = MathMin(Inp_MaxTakeProfit, chromosome.take_profit_pips);
+         }
+      }
+      
+      // Mutate take profit
+      if(MathRand() / 32767.0 < Inp_MutationRate) {
+         int change = (int)((MathRand() % 41) - 20); // -20 to +20 pips
+         chromosome.take_profit_pips += change;
+         
+         // Calculate min/max TP based on SL and RR constraints
+         int min_tp = (int)(chromosome.stop_loss_pips * Inp_MinRiskReward);
+         int max_tp = (int)(chromosome.stop_loss_pips * Inp_MaxRiskReward);
+         
+         // Also consider global TP constraints
+         min_tp = MathMax(min_tp, Inp_MinTakeProfit);
+         max_tp = MathMin(max_tp, Inp_MaxTakeProfit);
+         
+         // Apply constraints
+         chromosome.take_profit_pips = MathMax(min_tp, chromosome.take_profit_pips);
+         chromosome.take_profit_pips = MathMin(max_tp, chromosome.take_profit_pips);
+      }
    }
 }
 
@@ -833,9 +1004,9 @@ int RandomPeriod(int min_val, int max_val)
 }
 
 //+------------------------------------------------------------------+
-//| Simulate SMA strategy with given periods to calculate fitness     |
+//| Simulate SMA strategy with given parameters to calculate fitness  |
 //+------------------------------------------------------------------+
-double SimulateSMA(int short_period, int long_period)
+double SimulateSMA(int short_period, int long_period, int sl_pips, int tp_pips)
 {
    // Verify parameters
    if(short_period <= 0 || long_period <= short_period) return -1000000;
@@ -877,6 +1048,9 @@ double SimulateSMA(int short_period, int long_period)
    IndicatorRelease(temp_short);
    IndicatorRelease(temp_long);
    
+   // Calculate pip value for SL/TP
+   double pip_value = Point();
+   
    // Simulation variables
    double balance = 10000.0;
    double profit = 0.0;
@@ -886,6 +1060,8 @@ double SimulateSMA(int short_period, int long_period)
    double peak_balance = balance;
    int position = 0; // 0=flat, 1=long, -1=short
    double entry_price = 0.0;
+   double sl_price = 0.0;
+   double tp_price = 0.0;
    
    // Simulate trading
    for(int i = long_period + 1; i < Inp_TestBars; i++) {
@@ -893,7 +1069,49 @@ double SimulateSMA(int short_period, int long_period)
       bool cross_up = short_buffer[i+1] <= long_buffer[i+1] && short_buffer[i] > long_buffer[i];
       bool cross_down = short_buffer[i+1] >= long_buffer[i+1] && short_buffer[i] < long_buffer[i];
       
-      // Handle position exit
+      // Handle SL/TP hits
+      if(position != 0) {
+         if(position == 1) { // Long position
+            // Check for stop loss hit
+            if(sl_price > 0 && rates[i].low <= sl_price) {
+               double p = sl_price - entry_price;
+               profit += p;
+               trades++;
+               position = 0;
+               balance += p;
+            }
+            // Check for take profit hit
+            else if(tp_price > 0 && rates[i].high >= tp_price) {
+               double p = tp_price - entry_price;
+               profit += p;
+               wins++;
+               trades++;
+               position = 0;
+               balance += p;
+            }
+         }
+         else if(position == -1) { // Short position
+            // Check for stop loss hit
+            if(sl_price > 0 && rates[i].high >= sl_price) {
+               double p = entry_price - sl_price;
+               profit += p;
+               trades++;
+               position = 0;
+               balance += p;
+            }
+            // Check for take profit hit
+            else if(tp_price > 0 && rates[i].low <= tp_price) {
+               double p = entry_price - tp_price;
+               profit += p;
+               wins++;
+               trades++;
+               position = 0;
+               balance += p;
+            }
+         }
+      }
+      
+      // Handle position exit via signal
       if(position == 1 && cross_down) {
          double p = rates[i].close - entry_price;
          profit += p;
@@ -921,10 +1139,20 @@ double SimulateSMA(int short_period, int long_period)
          if(cross_up) {
             position = 1;
             entry_price = rates[i].close;
+            // Set SL/TP if enabled
+            if(sl_pips > 0) sl_price = entry_price - sl_pips * pip_value;
+            else sl_price = 0;
+            if(tp_pips > 0) tp_price = entry_price + tp_pips * pip_value;
+            else tp_price = 0;
          }
          else if(cross_down) {
             position = -1;
             entry_price = rates[i].close;
+            // Set SL/TP if enabled
+            if(sl_pips > 0) sl_price = entry_price + sl_pips * pip_value;
+            else sl_price = 0;
+            if(tp_pips > 0) tp_price = entry_price - tp_pips * pip_value;
+            else tp_price = 0;
          }
       }
    }
@@ -936,33 +1164,42 @@ double SimulateSMA(int short_period, int long_period)
    if(trades == 0) return -500;
    
    double win_rate = (double)wins / trades;
-   double profit_factor = (trades - wins > 0) ? (profit / (trades - wins)) : profit;
+   double avg_profit = profit / trades;
    
    // Combine different metrics
    fitness = profit * 0.4;                   // 40% weight on raw profit
-   fitness += win_rate * 1000 * 0.3;         // 30% weight on win rate
-   fitness += (100.0 - max_drawdown) * 0.3;  // 30% weight on avoiding drawdown
+   fitness += win_rate * 1000 * 0.25;        // 25% weight on win rate
+   fitness += (100.0 - max_drawdown) * 0.25; // 25% weight on avoiding drawdown
+   fitness += trades * 0.1;                  // 10% weight on number of trades
    
-   // Add penalty for periods that are too far from current
+   // Add penalty for parameters that are too far from current
    // This helps prevent massive jumps in parameters
-   double period_shift_penalty = 0.05 * (MathAbs(short_period - g_shortPeriod) + 
-                                       MathAbs(long_period - g_longPeriod));
+   double sma_penalty = 0.05 * (MathAbs(short_period - g_shortPeriod) + 
+                              MathAbs(long_period - g_longPeriod));
+                              
+   double risk_penalty = 0.0;
+   if(Inp_EvolveRiskParams) {
+      risk_penalty = 0.03 * (MathAbs(sl_pips - g_stopLossPips) / 10.0 + 
+                           MathAbs(tp_pips - g_takeProfitPips) / 20.0);
+   }
    
-   fitness -= period_shift_penalty;
+   fitness -= (sma_penalty + risk_penalty);
    
    return fitness;
 }
 
 //+------------------------------------------------------------------+
-//| Update chart comment with current SMA periods and time            |
+//| Update chart comment with current parameters and time            |
 //+------------------------------------------------------------------+
 void UpdateChartComment()
 {
    string time_str = TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES|TIME_SECONDS);
    
-   g_infoText = "SMA Evolution EA v2.0 - Last Updated: " + time_str + "\n";
+   g_infoText = "SMA Evolution EA v2.10 - Last Updated: " + time_str + "\n";
    g_infoText += "SMA Periods: Short=" + IntegerToString(g_shortPeriod) + 
                  ", Long=" + IntegerToString(g_longPeriod) + "\n";
+   g_infoText += "Risk Parameters: SL=" + IntegerToString(g_stopLossPips) + 
+                 ", TP=" + IntegerToString(g_takeProfitPips) + " pips\n";
    
    // Add position sizing info
    if(Inp_LotSize <= 0) {
@@ -989,6 +1226,12 @@ void UpdateChartComment()
       int mins = (int)(time_left / 60);
       int secs = (int)(time_left % 60);
       g_infoText += "Next Evolution: " + IntegerToString(mins) + "m " + IntegerToString(secs) + "s";
+      
+      if(Inp_EvolveRiskParams) {
+         g_infoText += " (Evolving SMA + Risk params)";
+      } else {
+         g_infoText += " (Evolving SMA only)";
+      }
       
       if(Inp_OnlyEvolveAfterLosses) {
          g_infoText += " (or after loss)";
