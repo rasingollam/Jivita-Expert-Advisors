@@ -21,6 +21,7 @@ input ulong            Inp_MagicNumber = 123456;    // Magic Number
 input int              Inp_StopLossPips = 50;       // Initial Stop Loss in pips (0=off)
 input int              Inp_TakeProfitPips = 100;    // Initial Take Profit in pips (0=off)
 input double           Inp_MaxSpreadPoints = 5.0;   // Max spread in points (0=off)
+input bool             Inp_CloseOnOppositeSignal = false; // Close positions on opposite signal
 
 // Genetic Algorithm Parameters
 input group           "Genetic Algorithm Parameters"
@@ -417,12 +418,24 @@ void ExecuteSignal(int signal)
             break;
          }
          
-      case -1: // Close Sells
-         ClosePositions(POSITION_TYPE_SELL);
+      case -1: // Close Sells on opposite signal
+         if(Inp_CloseOnOppositeSignal) {
+            // Close positions if enabled
+            ClosePositions(POSITION_TYPE_SELL);
+            Print("Sell positions closed on opposite signal");
+         } else {
+            Print("Sell close signal received but ignored - letting SL/TP manage exit");
+         }
          break;
          
-      case -2: // Close Buys
-         ClosePositions(POSITION_TYPE_BUY);
+      case -2: // Close Buys on opposite signal
+         if(Inp_CloseOnOppositeSignal) {
+            // Close positions if enabled
+            ClosePositions(POSITION_TYPE_BUY);
+            Print("Buy positions closed on opposite signal");
+         } else {
+            Print("Buy close signal received but ignored - letting SL/TP manage exit");
+         }
          break;
    }
 }
@@ -1089,6 +1102,15 @@ double SimulateSMA(int short_period, int long_period, int sl_pips, int tp_pips)
                position = 0;
                balance += p;
             }
+            // Handle signal-based exit if enabled
+            else if(Inp_CloseOnOppositeSignal && cross_down) {
+               double p = rates[i].close - entry_price;
+               profit += p;
+               if(p > 0) wins++;
+               trades++;
+               position = 0;
+               balance += p;
+            }
          }
          else if(position == -1) { // Short position
             // Check for stop loss hit
@@ -1108,31 +1130,17 @@ double SimulateSMA(int short_period, int long_period, int sl_pips, int tp_pips)
                position = 0;
                balance += p;
             }
+            // Handle signal-based exit if enabled
+            else if(Inp_CloseOnOppositeSignal && cross_up) {
+               double p = entry_price - rates[i].close;
+               profit += p;
+               if(p > 0) wins++;
+               trades++;
+               position = 0;
+               balance += p;
+            }
          }
       }
-      
-      // Handle position exit via signal
-      if(position == 1 && cross_down) {
-         double p = rates[i].close - entry_price;
-         profit += p;
-         if(p > 0) wins++;
-         trades++;
-         position = 0;
-         balance += p;
-      }
-      else if(position == -1 && cross_up) {
-         double p = entry_price - rates[i].close;
-         profit += p;
-         if(p > 0) wins++;
-         trades++;
-         position = 0;
-         balance += p;
-      }
-      
-      // Update drawdown tracking
-      if(balance > peak_balance) peak_balance = balance;
-      double dd = (peak_balance - balance) / peak_balance * 100.0;
-      if(dd > max_drawdown) max_drawdown = dd;
       
       // Handle position entry
       if(position == 0) {
@@ -1200,6 +1208,13 @@ void UpdateChartComment()
                  ", Long=" + IntegerToString(g_longPeriod) + "\n";
    g_infoText += "Risk Parameters: SL=" + IntegerToString(g_stopLossPips) + 
                  ", TP=" + IntegerToString(g_takeProfitPips) + " pips\n";
+   
+   // Update exit mode info based on input setting
+   if(Inp_CloseOnOppositeSignal) {
+      g_infoText += "[EXIT MODE: SL/TP + Opposite Signals]\n";
+   } else {
+      g_infoText += "[EXIT MODE: SL/TP Only - Signal exits disabled]\n";
+   }
    
    // Add position sizing info
    if(Inp_LotSize <= 0) {
