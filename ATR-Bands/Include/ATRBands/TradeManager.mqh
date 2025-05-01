@@ -188,6 +188,11 @@ public:
         return true;
     }
     
+    // Check if current time is within allowed trading hours
+    bool IsWithinTradingHours() const {
+        return m_settings.IsWithinTradingHours();
+    }
+    
     // Get day of week description
     string GetDayOfWeekDescription(int dayOfWeek) const {
         switch(dayOfWeek) {
@@ -228,7 +233,23 @@ public:
             
             if (!isDayAllowed) reason = "trading not allowed on " + GetDayOfWeekDescription(dayOfWeek);
             
+            // Check time filter and provide appropriate message
+            if (m_settings.useTimeFilter && !m_settings.IsWithinTradingHours()) {
+                reason = StringFormat("outside trading hours (%02d:%02d - %02d:%02d)",
+                                     m_settings.tradeStartHour, m_settings.tradeStartMinute,
+                                     m_settings.tradeEndHour, m_settings.tradeEndMinute);
+            }
+            
             Print("Buy signal ignored: ", reason);
+            return false;
+        }
+        
+        // Check if current time is within allowed trading hours
+        if (m_settings.useTimeFilter && !m_settings.IsWithinTradingHours()) {
+            Print("Buy signal ignored: outside trading hours (", 
+                  StringFormat("%02d:%02d - %02d:%02d",
+                              m_settings.tradeStartHour, m_settings.tradeStartMinute,
+                              m_settings.tradeEndHour, m_settings.tradeEndMinute), ")");
             return false;
         }
         
@@ -308,7 +329,23 @@ public:
             
             if (!isDayAllowed) reason = "trading not allowed on " + GetDayOfWeekDescription(dayOfWeek);
             
+            // Check time filter and provide appropriate message
+            if (m_settings.useTimeFilter && !m_settings.IsWithinTradingHours()) {
+                reason = StringFormat("outside trading hours (%02d:%02d - %02d:%02d)",
+                                     m_settings.tradeStartHour, m_settings.tradeStartMinute,
+                                     m_settings.tradeEndHour, m_settings.tradeEndMinute);
+            }
+            
             Print("Sell signal ignored: ", reason);
+            return false;
+        }
+        
+        // Check if current time is within allowed trading hours
+        if (m_settings.useTimeFilter && !m_settings.IsWithinTradingHours()) {
+            Print("Sell signal ignored: outside trading hours (", 
+                  StringFormat("%02d:%02d - %02d:%02d",
+                              m_settings.tradeStartHour, m_settings.tradeStartMinute,
+                              m_settings.tradeEndHour, m_settings.tradeEndMinute), ")");
             return false;
         }
         

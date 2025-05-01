@@ -48,6 +48,13 @@ public:
     bool allowSaturday;
     bool allowSunday;
     
+    // Time filter settings
+    bool useTimeFilter;
+    int tradeStartHour;
+    int tradeStartMinute;
+    int tradeEndHour;
+    int tradeEndMinute;
+    
     // Target profit and stop loss settings
     double targetProfitPercent;
     double stopLossPercent;
@@ -97,6 +104,12 @@ public:
         allowSaturday = true;
         allowSunday = true;
         
+        useTimeFilter = false;
+        tradeStartHour = 0;
+        tradeStartMinute = 0;
+        tradeEndHour = 0;
+        tradeEndMinute = 0;
+        
         targetProfitPercent = 0.0;
         stopLossPercent = 0.0;
         targetReached = false;
@@ -139,6 +152,9 @@ public:
         bool p_allowFriday,
         bool p_allowSaturday,
         bool p_allowSunday,
+        bool p_useTimeFilter,
+        string p_tradeStartTime,
+        string p_tradeEndTime,
         double p_targetProfitPercent,
         double p_stopLossPercent,
         bool p_isOptimization,
@@ -205,6 +221,17 @@ public:
             return false;
         }
         
+        // Parse time strings into hours and minutes
+        if(!ParseTimeString(p_tradeStartTime, tradeStartHour, tradeStartMinute)) {
+            Print("Invalid start time format: ", p_tradeStartTime, ". Expected format HH:MM.");
+            return false;
+        }
+        
+        if(!ParseTimeString(p_tradeEndTime, tradeEndHour, tradeEndMinute)) {
+            Print("Invalid end time format: ", p_tradeEndTime, ". Expected format HH:MM.");
+            return false;
+        }
+        
         // Apply values
         atrPeriod = p_atrPeriod;
         atrMultiplier = p_atrMultiplier;
@@ -239,6 +266,9 @@ public:
         allowFriday = p_allowFriday;
         allowSaturday = p_allowSaturday;
         allowSunday = p_allowSunday;
+        
+        // Apply time filter settings
+        useTimeFilter = p_useTimeFilter;
         
         targetProfitPercent = p_targetProfitPercent;
         stopLossPercent = p_stopLossPercent;
@@ -293,6 +323,53 @@ public:
             case 5: return "Friday";
             case 6: return "Saturday";
             default: return "Unknown Day";
+        }
+    }
+    
+    // Helper function to parse time string in format "HH:MM"
+    bool ParseTimeString(string timeStr, int &hour, int &minute) {
+        // Default values
+        hour = 0;
+        minute = 0;
+        
+        // Split the string by colon
+        string parts[];
+        StringSplit(timeStr, ':', parts);
+        
+        // Check if we have exactly 2 parts
+        if(ArraySize(parts) != 2)
+            return false;
+            
+        // Try to convert parts to integers
+        hour = (int)StringToInteger(parts[0]);
+        minute = (int)StringToInteger(parts[1]);
+        
+        // Validate hours and minutes
+        if(hour < 0 || hour > 23 || minute < 0 || minute > 59)
+            return false;
+            
+        return true;
+    }
+    
+    // Helper function to check if current time is within trading hours
+    bool IsWithinTradingHours() const {
+        if (!useTimeFilter) return true;
+        
+        MqlDateTime now;
+        TimeToStruct(TimeCurrent(), now);
+        
+        // Create time values using just hours and minutes
+        int currentTime = now.hour * 100 + now.min;
+        int timeStart = tradeStartHour * 100 + tradeStartMinute;  // Renamed to avoid shadowing startTime
+        int timeEnd = tradeEndHour * 100 + tradeEndMinute;        // Renamed for consistency
+        
+        // Check if within trading hours
+        if (timeStart < timeEnd) {
+            // Normal case: start time is before end time (e.g., 09:00 - 17:00)
+            return (currentTime >= timeStart && currentTime < timeEnd);
+        } else {
+            // Overnight case: end time is on the next day (e.g., 22:00 - 06:00)
+            return (currentTime >= timeStart || currentTime < timeEnd);
         }
     }
 };

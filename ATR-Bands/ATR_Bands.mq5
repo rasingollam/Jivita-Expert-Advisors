@@ -51,6 +51,11 @@ input bool             Friday = true;                  // Allow trading on Frida
 input bool             Saturday = false;               // Allow trading on Saturday
 input bool             Sunday = false;                 // Allow trading on Sunday
 
+input group "Trading Hours"
+input bool             UseTimeFilter = false;          // Enable time filter for entries
+input string           TradeStartTime = "09:00";       // Trading start time (24h format)
+input string           TradeEndTime = "17:00";         // Trading end time (24h format)
+
 input group "Risk Management"
 input double           TargetProfitPercent = 0.0;      // Target profit percentage (0 = disabled)
 input double           StopLossPercent = 0.0;          // Stop trading when drawdown exceeds this percentage (0 = disabled)
@@ -85,6 +90,28 @@ string TimeDayOfWeekDescription(datetime time) {
         case 6: return "Saturday";
         default: return "Unknown Day";
     }
+}
+
+// Helper function to check if current time is within allowed trading hours
+bool IsWithinTradingHours() {
+   if (!settings.useTimeFilter) return true;
+   
+   MqlDateTime now;
+   TimeToStruct(TimeCurrent(), now);
+   
+   // Create time values using just hours and minutes
+   int currentTime = now.hour * 100 + now.min;
+   int startTime = settings.tradeStartHour * 100 + settings.tradeStartMinute;
+   int endTime = settings.tradeEndHour * 100 + settings.tradeEndMinute;
+   
+   // Return true if within trading hours
+   if (startTime < endTime) {
+      // Normal case: start time is before end time (e.g., 09:00 - 17:00)
+      return (currentTime >= startTime && currentTime < endTime);
+   } else {
+      // Overnight case: end time is on the next day (e.g., 22:00 - 06:00)
+      return (currentTime >= startTime || currentTime < endTime);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -128,6 +155,7 @@ int OnInit()
                            UseEmaTrailingStop, EmaTrailingPeriod,
                            UseTakeProfit, MagicNumber, 
                            Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday,
+                           UseTimeFilter, TradeStartTime, TradeEndTime,
                            TargetProfitPercent, 
                            StopLossPercent, isOptimization, DEFAULT_TEST_MODE)) {
       Print("Failed to initialize settings - check above for detailed error");
@@ -332,6 +360,16 @@ void OnTick()
       // Execute trades based on signals with clear logging
       if(signal.hasSignal) {
          if(tradeManager.CanTrade()) {
+            // Check if we're within the trading time window for entries
+            if(!IsWithinTradingHours()) {
+               Print("Signal detected but outside trading hours (", 
+                     settings.tradeStartHour, ":", 
+                     settings.tradeStartMinute < 10 ? "0" : "", settings.tradeStartMinute, " - ", 
+                     settings.tradeEndHour, ":", 
+                     settings.tradeEndMinute < 10 ? "0" : "", settings.tradeEndMinute, ")");
+               return;
+            }
+            
             Print("Executing trade for detected signal: ", signal.signalType);
             if(signal.isBuySignal) {
                if(tradeManager.ExecuteBuy(signal.signalType)) {
