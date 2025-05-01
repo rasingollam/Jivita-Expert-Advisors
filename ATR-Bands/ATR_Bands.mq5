@@ -34,9 +34,29 @@ input group "Trade Settings"
 input bool             EnableTrading = true;           // Enable automatic trading
 input double           RiskRewardRatio = 1.5;          // Risk to Reward Ratio (1.0 = 1:1)
 input double           RiskPercentage = 1.0;           // Risk percentage of account
-input int              StopLossPips = 10;              // Stop Loss in pips
+input bool             UseAtrStopLoss = true;          // Use ATR-based stop loss
+input double           AtrStopLossMultiplier = 1.0;    // ATR multiplier for stop loss
+input bool             UseEmaTrailingStop = false;     // Use EMA-based trailing stop
+input int              EmaTrailingPeriod = 20;         // EMA period for trailing stop
+input int              StopLossPips = 10;              // Fixed Stop Loss in pips (when not using ATR)
 input bool             UseTakeProfit = true;           // Use Take Profit
 input int              MagicNumber = 12345;            // Magic Number to identify this EA's trades
+
+input group "Trading Schedule"
+input bool             Monday = true;                  // Allow trading on Monday
+input bool             Tuesday = true;                 // Allow trading on Tuesday
+input bool             Wednesday = true;               // Allow trading on Wednesday
+input bool             Thursday = true;                // Allow trading on Thursday
+input bool             Friday = true;                  // Allow trading on Friday
+input bool             Saturday = false;               // Allow trading on Saturday
+input bool             Sunday = false;                 // Allow trading on Sunday
+
+input group "Trading Hours"
+input bool             UseTimeFilter = false;          // Enable time filter for entries
+input string           TradeStartTime = "09:00";       // Trading start time (24h format)
+input string           TradeEndTime = "17:00";         // Trading end time (24h format)
+
+input group "Risk Management"
 input double           TargetProfitPercent = 0.0;      // Target profit percentage (0 = disabled)
 input double           StopLossPercent = 0.0;          // Stop trading when drawdown exceeds this percentage (0 = disabled)
 
@@ -54,6 +74,45 @@ datetime lastLogTime = 0;  // For limiting debug output
 // Default values for removed parameters
 const int DEFAULT_SIGNAL_SIZE = 3;  // Default signal size
 const bool DEFAULT_TEST_MODE = false;  // Default test mode setting
+
+// Helper function to get the textual description of a day of week
+string TimeDayOfWeekDescription(datetime time) {
+    MqlDateTime dt;
+    TimeToStruct(time, dt);
+    
+    switch(dt.day_of_week) {
+        case 0: return "Sunday";
+        case 1: return "Monday";
+        case 2: return "Tuesday";
+        case 3: return "Wednesday";
+        case 4: return "Thursday";
+        case 5: return "Friday";
+        case 6: return "Saturday";
+        default: return "Unknown Day";
+    }
+}
+
+// Helper function to check if current time is within allowed trading hours
+bool IsWithinTradingHours() {
+   if (!settings.useTimeFilter) return true;
+   
+   MqlDateTime now;
+   TimeToStruct(TimeCurrent(), now);
+   
+   // Create time values using just hours and minutes
+   int currentTime = now.hour * 100 + now.min;
+   int startTime = settings.tradeStartHour * 100 + settings.tradeStartMinute;
+   int endTime = settings.tradeEndHour * 100 + settings.tradeEndMinute;
+   
+   // Return true if within trading hours
+   if (startTime < endTime) {
+      // Normal case: start time is before end time (e.g., 09:00 - 17:00)
+      return (currentTime >= startTime && currentTime < endTime);
+   } else {
+      // Overnight case: end time is on the next day (e.g., 22:00 - 06:00)
+      return (currentTime >= startTime || currentTime < endTime);
+   }
+}
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -83,7 +142,6 @@ int OnInit()
       Print("Critical error: Failed to allocate memory for settings");
       return INIT_FAILED;
    }
-   
    Print("Attempting to initialize settings with parameters...");
    Print("ATR_Period:", ATR_Period, " ATR_Multiplier:", ATR_Multiplier);
    
@@ -93,7 +151,12 @@ int OnInit()
                            SIGNAL_TYPE_TOUCH, DEFAULT_SIGNAL_SIZE, clrNONE, clrNONE, 
                            BuyTouchColor, SellTouchColor, EnableTrading, 
                            RiskRewardRatio, RiskPercentage, StopLossPips, 
-                           UseTakeProfit, MagicNumber, TargetProfitPercent, 
+                           UseAtrStopLoss, AtrStopLossMultiplier,
+                           UseEmaTrailingStop, EmaTrailingPeriod,
+                           UseTakeProfit, MagicNumber, 
+                           Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday,
+                           UseTimeFilter, TradeStartTime, TradeEndTime,
+                           TargetProfitPercent, 
                            StopLossPercent, isOptimization, DEFAULT_TEST_MODE)) {
       Print("Failed to initialize settings - check above for detailed error");
       return INIT_FAILED;
@@ -106,7 +169,6 @@ int OnInit()
       Print("Critical error: Failed to allocate memory for ATR indicator");
       return INIT_FAILED;
    }
-   
    // Enhanced error reporting for component initialization
    if(!atrIndicator.Initialize(settings)) {
       Print("ERROR: ATR indicator initialization failed - Period: ", settings.atrPeriod);
@@ -121,7 +183,7 @@ int OnInit()
    }
    
    // Trade manager
-   tradeManager = new TradeManager(settings);
+   tradeManager = new TradeManager(settings, atrIndicator);
    if(tradeManager == NULL) {
       Print("Critical error: Failed to allocate memory for trade manager");
       return INIT_FAILED;
@@ -134,16 +196,13 @@ int OnInit()
          Print("Critical error: Failed to allocate memory for UI manager");
          return INIT_FAILED;
       }
-      
       if(!uiManager.Initialize()) {
          Print("Failed to initialize UI manager");
          return INIT_FAILED;
       }
    }
    
-   // Enable chart events for UI interaction
-   // Fixed function parameters - ChartSetInteger requires chart_id, property_id, property_value
-   ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, true);
+   // Enable chart events for UI interaction - only for object clicks, not mouse move
    ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
    ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, true);
    
@@ -175,17 +234,14 @@ void OnDeinit(const int reason)
       delete tradeManager;
       tradeManager = NULL;
    }
-   
    if(signalDetector != NULL) {
       delete signalDetector;
       signalDetector = NULL;
    }
-   
    if(atrIndicator != NULL) {
       delete atrIndicator;
       atrIndicator = NULL;
    }
-   
    if(settings != NULL) {
       delete settings;
       settings = NULL;
@@ -209,12 +265,10 @@ void OnDeinit(const int reason)
 bool IsNewBar()
 {
    datetime currentBarTime = iTime(_Symbol, _Period, 0);
-   
    if (lastBarTime == 0 || currentBarTime > lastBarTime) {
       lastBarTime = currentBarTime;
       return true;
    }
-   
    return false;
 }
 
@@ -237,11 +291,9 @@ void OnTick()
          if(atrIndicator == NULL) missingComponents += "ATR Indicator, ";
          if(signalDetector == NULL) missingComponents += "Signal Detector, ";
          if(tradeManager == NULL) missingComponents += "Trade Manager, ";
-         
          // Remove trailing comma and space
          if(StringLen(missingComponents) > 2)
             missingComponents = StringSubstr(missingComponents, 0, StringLen(missingComponents) - 2);
-            
          Print("EA components not properly initialized: ", missingComponents);
          errorReported = true;
       }
@@ -264,10 +316,37 @@ void OnTick()
          return;
       }
       
+      // Check if trading is allowed on the current day
+      MqlDateTime dt;
+      TimeToStruct(TimeCurrent(), dt);
+      int dayOfWeek = dt.day_of_week;
+      bool isDayAllowed = false;
+      
+      // Check if day of week is allowed
+      switch(dayOfWeek) {
+         case 0: isDayAllowed = settings.allowSunday; break;
+         case 1: isDayAllowed = settings.allowMonday; break;
+         case 2: isDayAllowed = settings.allowTuesday; break;
+         case 3: isDayAllowed = settings.allowWednesday; break;
+         case 4: isDayAllowed = settings.allowThursday; break;
+         case 5: isDayAllowed = settings.allowFriday; break;
+         case 6: isDayAllowed = settings.allowSaturday; break;
+      }
+      
+      if(!isDayAllowed) {
+         Print("Trading not allowed on ", TimeDayOfWeekDescription(TimeCurrent()));
+         return;
+      }
+      
       // Log current ATR values for verification
       Print("ATR value: ", DoubleToString(atrIndicator.GetCurrentATR(), _Digits),
             ", Upper band: ", DoubleToString(atrIndicator.GetUpperBand(), _Digits),
             ", Lower band: ", DoubleToString(atrIndicator.GetLowerBand(), _Digits));
+      
+      // Apply EMA trailing stop if enabled
+      if(settings.useEmaTrailingStop) {
+         tradeManager.ProcessTrailingStop();
+      }
       
       // Look for touch signals only
       SignalInfo signal = signalDetector.DetectSignals();
@@ -281,6 +360,16 @@ void OnTick()
       // Execute trades based on signals with clear logging
       if(signal.hasSignal) {
          if(tradeManager.CanTrade()) {
+            // Check if we're within the trading time window for entries
+            if(!IsWithinTradingHours()) {
+               Print("Signal detected but outside trading hours (", 
+                     settings.tradeStartHour, ":", 
+                     settings.tradeStartMinute < 10 ? "0" : "", settings.tradeStartMinute, " - ", 
+                     settings.tradeEndHour, ":", 
+                     settings.tradeEndMinute < 10 ? "0" : "", settings.tradeEndMinute, ")");
+               return;
+            }
+            
             Print("Executing trade for detected signal: ", signal.signalType);
             if(signal.isBuySignal) {
                if(tradeManager.ExecuteBuy(signal.signalType)) {
@@ -329,7 +418,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 void OnChartEvent(const int id, 
                   const long &lparam, 
                   const double &dparam, 
-                  const string &sparam)
+                  const string &sparam) 
 {
    // Pass all chart events to UI manager for handling button clicks and dragging
    if(uiManager != NULL && !MQLInfoInteger(MQL_TESTER)) {

@@ -5,6 +5,7 @@
 //+------------------------------------------------------------------+
 #include <Trade/Trade.mqh>
 #include "Settings.mqh"
+#include "ATRIndicator.mqh"  // Add ATR indicator include
 
 //+------------------------------------------------------------------+
 //| Class to manage trading operations                               |
@@ -14,11 +15,18 @@ class TradeManager
 private:
     CTrade m_trade;
     EASettings* m_settings;
+    ATRIndicator* m_atrIndicator;  // Add reference to ATR indicator
     
     // Trading performance tracking
     double m_cumulativeProfit;
     int m_totalTrades;
     ulong m_lastDealTicket;
+    
+    // New tracking variables for winrate and profit factor
+    int m_winningTrades;
+    int m_losingTrades;
+    double m_totalProfits;
+    double m_totalLosses;
     
     // Check if there are any open positions for the symbol
     bool HasOpenPositions() {
@@ -85,12 +93,19 @@ private:
     }
     
 public:
-    // Constructor with renamed parameter to avoid shadowing
-    TradeManager(EASettings* p_settings) {
+    // Constructor with ATR indicator parameter
+    TradeManager(EASettings* p_settings, ATRIndicator* p_atrIndicator) {
         m_settings = p_settings;
+        m_atrIndicator = p_atrIndicator;
         m_cumulativeProfit = 0;
         m_totalTrades = 0;
         m_lastDealTicket = 0;
+        
+        // Initialize new tracking variables
+        m_winningTrades = 0;
+        m_losingTrades = 0;
+        m_totalProfits = 0;
+        m_totalLosses = 0;
         
         // Set Magic Number for trade object
         m_trade.SetExpertMagicNumber(m_settings.magicNumber);
@@ -110,6 +125,23 @@ public:
             if (GlobalVariableCheck(prefix + "LastDealTicket")) {
                 m_lastDealTicket = (ulong)GlobalVariableGet(prefix + "LastDealTicket");
             }
+            
+            // Load win/loss statistics
+            if (GlobalVariableCheck(prefix + "WinningTrades")) {
+                m_winningTrades = (int)GlobalVariableGet(prefix + "WinningTrades");
+            }
+            
+            if (GlobalVariableCheck(prefix + "LosingTrades")) {
+                m_losingTrades = (int)GlobalVariableGet(prefix + "LosingTrades");
+            }
+            
+            if (GlobalVariableCheck(prefix + "TotalProfits")) {
+                m_totalProfits = GlobalVariableGet(prefix + "TotalProfits");
+            }
+            
+            if (GlobalVariableCheck(prefix + "TotalLosses")) {
+                m_totalLosses = GlobalVariableGet(prefix + "TotalLosses");
+            }
         }
     }
     
@@ -121,6 +153,12 @@ public:
             GlobalVariableSet(prefix + "CumulativeProfit", m_cumulativeProfit);
             GlobalVariableSet(prefix + "TotalTrades", m_totalTrades);
             GlobalVariableSet(prefix + "LastDealTicket", (double)m_lastDealTicket);
+            
+            // Save win/loss statistics
+            GlobalVariableSet(prefix + "WinningTrades", m_winningTrades);
+            GlobalVariableSet(prefix + "LosingTrades", m_losingTrades);
+            GlobalVariableSet(prefix + "TotalProfits", m_totalProfits);
+            GlobalVariableSet(prefix + "TotalLosses", m_totalLosses);
         }
     }
     
@@ -129,7 +167,44 @@ public:
         if (!m_settings.tradingEnabled) return false;
         if (m_settings.targetReached) return false;
         if (m_settings.stopLossReached) return false;
+        
+        // Check if current day is allowed
+        MqlDateTime dt;
+        TimeToStruct(TimeCurrent(), dt);
+        int dayOfWeek = dt.day_of_week;
+        
+        // Check if day of week is allowed
+        switch(dayOfWeek) {
+            case 0: return m_settings.allowSunday;
+            case 1: return m_settings.allowMonday;
+            case 2: return m_settings.allowTuesday;
+            case 3: return m_settings.allowWednesday;
+            case 4: return m_settings.allowThursday;
+            case 5: return m_settings.allowFriday;
+            case 6: return m_settings.allowSaturday;
+            default: return false;
+        }
+        
         return true;
+    }
+    
+    // Check if current time is within allowed trading hours
+    bool IsWithinTradingHours() const {
+        return m_settings.IsWithinTradingHours();
+    }
+    
+    // Get day of week description
+    string GetDayOfWeekDescription(int dayOfWeek) const {
+        switch(dayOfWeek) {
+            case 0: return "Sunday";
+            case 1: return "Monday";
+            case 2: return "Tuesday";
+            case 3: return "Wednesday";
+            case 4: return "Thursday";
+            case 5: return "Friday";
+            case 6: return "Saturday";
+            default: return "Unknown Day";
+        }
     }
     
     // Execute a buy order
@@ -139,7 +214,42 @@ public:
             string reason = "trading disabled";
             if (m_settings.targetReached) reason = "target profit reached";
             if (m_settings.stopLossReached) reason = "stop loss threshold reached";
+            
+            // Check day of week and provide appropriate message
+            MqlDateTime dt;
+            TimeToStruct(TimeCurrent(), dt);
+            int dayOfWeek = dt.day_of_week;
+            
+            bool isDayAllowed = false;
+            switch(dayOfWeek) {
+                case 0: isDayAllowed = m_settings.allowSunday; break;
+                case 1: isDayAllowed = m_settings.allowMonday; break;
+                case 2: isDayAllowed = m_settings.allowTuesday; break;
+                case 3: isDayAllowed = m_settings.allowWednesday; break;
+                case 4: isDayAllowed = m_settings.allowThursday; break;
+                case 5: isDayAllowed = m_settings.allowFriday; break;
+                case 6: isDayAllowed = m_settings.allowSaturday; break;
+            }
+            
+            if (!isDayAllowed) reason = "trading not allowed on " + GetDayOfWeekDescription(dayOfWeek);
+            
+            // Check time filter and provide appropriate message
+            if (m_settings.useTimeFilter && !m_settings.IsWithinTradingHours()) {
+                reason = StringFormat("outside trading hours (%02d:%02d - %02d:%02d)",
+                                     m_settings.tradeStartHour, m_settings.tradeStartMinute,
+                                     m_settings.tradeEndHour, m_settings.tradeEndMinute);
+            }
+            
             Print("Buy signal ignored: ", reason);
+            return false;
+        }
+        
+        // Check if current time is within allowed trading hours
+        if (m_settings.useTimeFilter && !m_settings.IsWithinTradingHours()) {
+            Print("Buy signal ignored: outside trading hours (", 
+                  StringFormat("%02d:%02d - %02d:%02d",
+                              m_settings.tradeStartHour, m_settings.tradeStartMinute,
+                              m_settings.tradeEndHour, m_settings.tradeEndMinute), ")");
             return false;
         }
         
@@ -151,7 +261,22 @@ public:
         
         // Calculate entry and SL/TP levels
         double entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-        double stopLossDistance = m_settings.PipsToPoints(m_settings.stopLossPips);
+        double stopLossDistance;
+        
+        // Use either ATR-based or fixed stop loss
+        if (m_settings.useAtrStopLoss) {
+            // Get current ATR value from the ATR indicator
+            double atrValue = m_atrIndicator.GetCurrentATR();
+            stopLossDistance = atrValue * m_settings.atrStopLossMultiplier;
+            Print("Using ATR-based stop loss: ATR = ", DoubleToString(atrValue, _Digits), 
+                  " × Multiplier ", DoubleToString(m_settings.atrStopLossMultiplier, 2), 
+                  " = ", DoubleToString(stopLossDistance, _Digits));
+        } else {
+            stopLossDistance = m_settings.PipsToPoints(m_settings.stopLossPips);
+            Print("Using fixed stop loss: ", m_settings.stopLossPips, " pips = ", 
+                  DoubleToString(stopLossDistance, _Digits));
+        }
+        
         double takeProfitDistance = stopLossDistance * m_settings.riskRewardRatio;
         
         double stopLossPrice = entryPrice - stopLossDistance;
@@ -185,7 +310,42 @@ public:
             string reason = "trading disabled";
             if (m_settings.targetReached) reason = "target profit reached";
             if (m_settings.stopLossReached) reason = "stop loss threshold reached";
+            
+            // Check day of week and provide appropriate message
+            MqlDateTime dt;
+            TimeToStruct(TimeCurrent(), dt);
+            int dayOfWeek = dt.day_of_week;
+            
+            bool isDayAllowed = false;
+            switch(dayOfWeek) {
+                case 0: isDayAllowed = m_settings.allowSunday; break;
+                case 1: isDayAllowed = m_settings.allowMonday; break;
+                case 2: isDayAllowed = m_settings.allowTuesday; break;
+                case 3: isDayAllowed = m_settings.allowWednesday; break;
+                case 4: isDayAllowed = m_settings.allowThursday; break;
+                case 5: isDayAllowed = m_settings.allowFriday; break;
+                case 6: isDayAllowed = m_settings.allowSaturday; break;
+            }
+            
+            if (!isDayAllowed) reason = "trading not allowed on " + GetDayOfWeekDescription(dayOfWeek);
+            
+            // Check time filter and provide appropriate message
+            if (m_settings.useTimeFilter && !m_settings.IsWithinTradingHours()) {
+                reason = StringFormat("outside trading hours (%02d:%02d - %02d:%02d)",
+                                     m_settings.tradeStartHour, m_settings.tradeStartMinute,
+                                     m_settings.tradeEndHour, m_settings.tradeEndMinute);
+            }
+            
             Print("Sell signal ignored: ", reason);
+            return false;
+        }
+        
+        // Check if current time is within allowed trading hours
+        if (m_settings.useTimeFilter && !m_settings.IsWithinTradingHours()) {
+            Print("Sell signal ignored: outside trading hours (", 
+                  StringFormat("%02d:%02d - %02d:%02d",
+                              m_settings.tradeStartHour, m_settings.tradeStartMinute,
+                              m_settings.tradeEndHour, m_settings.tradeEndMinute), ")");
             return false;
         }
         
@@ -197,7 +357,22 @@ public:
         
         // Calculate entry and SL/TP levels
         double entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-        double stopLossDistance = m_settings.PipsToPoints(m_settings.stopLossPips);
+        double stopLossDistance;
+        
+        // Use either ATR-based or fixed stop loss
+        if (m_settings.useAtrStopLoss) {
+            // Get current ATR value from the ATR indicator
+            double atrValue = m_atrIndicator.GetCurrentATR();
+            stopLossDistance = atrValue * m_settings.atrStopLossMultiplier;
+            Print("Using ATR-based stop loss: ATR = ", DoubleToString(atrValue, _Digits), 
+                  " × Multiplier ", DoubleToString(m_settings.atrStopLossMultiplier, 2), 
+                  " = ", DoubleToString(stopLossDistance, _Digits));
+        } else {
+            stopLossDistance = m_settings.PipsToPoints(m_settings.stopLossPips);
+            Print("Using fixed stop loss: ", m_settings.stopLossPips, " pips = ", 
+                  DoubleToString(stopLossDistance, _Digits));
+        }
+        
         double takeProfitDistance = stopLossDistance * m_settings.riskRewardRatio;
         
         double stopLossPrice = entryPrice + stopLossDistance;
@@ -342,6 +517,9 @@ public:
         ulong newLastDealTicket = m_lastDealTicket;
         double newProfit = 0.0;
         int newTrades = 0;
+        int newWins = 0;
+        double newProfits = 0.0;
+        double newLosses = 0.0;
         int totalDeals = HistoryDealsTotal();
         
         // First pass: calculate changes without updating state
@@ -361,6 +539,14 @@ public:
                 newProfit += profit;
                 newTrades++;
                 
+                // Track wins and losses for winrate calculation
+                if(profit >= 0) {
+                    newWins++;
+                    newProfits += profit;
+                } else {
+                    newLosses += MathAbs(profit);
+                }
+                
                 // Track highest ticket for next update
                 if(dealTicket > newLastDealTicket)
                     newLastDealTicket = dealTicket;
@@ -371,6 +557,10 @@ public:
         if(newTrades > 0) {
             m_cumulativeProfit += newProfit;
             m_totalTrades += newTrades;
+            m_winningTrades += newWins;
+            m_losingTrades += (newTrades - newWins);
+            m_totalProfits += newProfits;
+            m_totalLosses += newLosses;
             m_lastDealTicket = newLastDealTicket;
             
             // Log the update for debugging
@@ -406,5 +596,90 @@ public:
     // Get total trades count
     int GetTotalTrades() const {
         return m_totalTrades;
+    }
+    
+    // New methods to retrieve win rate and profit factor
+    double GetWinRate() const {
+        if(m_totalTrades <= 0) return 0;
+        return (double)m_winningTrades / m_totalTrades * 100.0;
+    }
+    
+    double GetProfitFactor() const {
+        if(m_totalLosses <= 0) return 0;
+        return m_totalProfits / m_totalLosses;
+    }
+    
+    int GetWinningTrades() const {
+        return m_winningTrades;
+    }
+    
+    int GetLosingTrades() const {
+        return m_losingTrades;
+    }
+    
+    // Process trailing stop based on EMA crossover
+    void ProcessTrailingStop() {
+        // Skip if EMA trailing stop is not enabled
+        if (!m_settings.useEmaTrailingStop) return;
+        
+        // Get current EMA value
+        double emaValue = m_atrIndicator.GetCurrentEMA();
+        if (emaValue <= 0) {
+            Print("Warning: Invalid EMA value for trailing stop");
+            return;
+        }
+        
+        // Get the close price of the last completed bar
+        double lastClosePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
+        
+        Print("EMA Trailing Stop check - EMA: ", DoubleToString(emaValue, _Digits), 
+              ", Last close: ", DoubleToString(lastClosePrice, _Digits));
+        
+        // Process all positions
+        for (int i = PositionsTotal() - 1; i >= 0; i--) {
+            ulong ticket = PositionGetTicket(i);
+            
+            // Skip positions that don't belong to this EA
+            if (!PositionSelectByTicket(ticket) || 
+                PositionGetString(POSITION_SYMBOL) != _Symbol ||
+                PositionGetInteger(POSITION_MAGIC) != m_settings.magicNumber) {
+                continue;
+            }
+            
+            // Get position type (buy or sell)
+            ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+            double currentProfit = PositionGetDouble(POSITION_PROFIT);
+            
+            bool closePosition = false;
+            
+            // Decide whether to close position based on EMA crossing
+            if (posType == POSITION_TYPE_BUY) {
+                // For buy positions, close if price closes below EMA
+                if (lastClosePrice < emaValue) {
+                    closePosition = true;
+                    Print("EMA Trailing Stop: Buy position close triggered - Price ", 
+                          DoubleToString(lastClosePrice, _Digits), 
+                          " closed below EMA ", DoubleToString(emaValue, _Digits));
+                }
+            }
+            else if (posType == POSITION_TYPE_SELL) {
+                // For sell positions, close if price closes above EMA
+                if (lastClosePrice > emaValue) {
+                    closePosition = true;
+                    Print("EMA Trailing Stop: Sell position close triggered - Price ", 
+                          DoubleToString(lastClosePrice, _Digits), 
+                          " closed above EMA ", DoubleToString(emaValue, _Digits));
+                }
+            }
+            
+            // Close the position if trailing stop is triggered
+            if (closePosition) {
+                if (!m_trade.PositionClose(ticket)) {
+                    Print("Failed to close position by EMA trailing stop: ", GetLastError());
+                } else {
+                    Print("Position #", ticket, " closed by EMA trailing stop");
+                }
+            }
+        }
     }
 };
