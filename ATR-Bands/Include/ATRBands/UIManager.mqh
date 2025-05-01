@@ -301,8 +301,7 @@ private:
         // --- Signal Information Section ---
         CreateSectionHeaderStatic("Signal Information", y);
         
-        // Create labels for signal section - simplified to show only Touch signals
-        CreateInfoLabelPair("Signal Type", "Touch Only", y);
+        // Create labels for signal section - removed "Signal Type" field, only showing current signal
         CreateInfoLabelPair("Current Signal", "None", y);
         
         // --- Trade Settings Section ---
@@ -483,10 +482,8 @@ private:
         UpdateInfoValue("Upper Band", DoubleToString(upperBand, 5));
         UpdateInfoValue("Lower Band", DoubleToString(lowerBand, 5));
         
-        // Update Signal Information section - Always show "Touch Only"
-        UpdateInfoValue("Signal Type", "Touch Only");
-        
-        // Update the signal display
+        // Update Signal Information section - removed "Signal Type" update
+        // Update only the signal display
         color signalColor = TEXT_COLOR;
         string signalText = "None";
         
@@ -533,9 +530,9 @@ private:
         contentEndY += SECTION_SPACING + 18 + 5;  // Header space
         contentEndY += 5 * (16 + LINE_SPACING);   // 5 items
         
-        // Add height for Signal Information section (header + 2 items)
+        // Add height for Signal Information section (header + 1 item) - reduced from 2 items to 1
         contentEndY += SECTION_SPACING + 18 + 5;  // Header space
-        contentEndY += 2 * (16 + LINE_SPACING);   // 2 items
+        contentEndY += 1 * (16 + LINE_SPACING);   // 1 item (was 2 items)
         
         // Add height for Trade Settings section (header + 8 items)
         contentEndY += SECTION_SPACING + 18 + 5;  // Header space
