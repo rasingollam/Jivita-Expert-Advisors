@@ -12,17 +12,15 @@
 #define PANEL_NAME "ATRPanel"
 #define PANEL_TITLE "ATR Bands"
 #define PANEL_X 20
-#define PANEL_Y 20
+#define PANEL_Y 30      
 #define PANEL_WIDTH 300
-#define PANEL_HEIGHT_INITIAL 460
+#define PANEL_HEIGHT_INITIAL 200
 #define PANEL_PADDING 10
 #define SECTION_SPACING 8
 #define LINE_SPACING 4
 #define HEADER_COLOR clrDodgerBlue
 #define TITLE_COLOR clrWhite
 #define TEXT_COLOR clrLightGray
-#define SIGNAL_BUY_COLOR clrLime
-#define SIGNAL_SELL_COLOR clrRed
 #define PROFIT_POSITIVE_COLOR clrLime
 #define PROFIT_NEGATIVE_COLOR clrRed
 #define PANEL_BACKGROUND_COLOR C'25,25,25'
@@ -261,58 +259,25 @@ private:
         
         // Add divider line below title
         CreatePanelLine(PANEL_NAME + "_TitleLine", 
-                      m_panelX + PANEL_PADDING, 
-                      m_panelY + PANEL_PADDING + 25, 
-                      m_panelX + PANEL_WIDTH - PANEL_PADDING, 
-                      m_panelY + PANEL_PADDING + 25, 
-                      HEADER_COLOR);
+                       m_panelX + PANEL_PADDING, 
+                       m_panelY + PANEL_PADDING + 25, 
+                       m_panelX + PANEL_WIDTH - PANEL_PADDING, 
+                       m_panelY + PANEL_PADDING + 25, 
+                       HEADER_COLOR);
         
         // Starting Y position for content (after title)
         int y = m_panelY + PANEL_PADDING + 30;
         
-        // Create section headers and labels for all sections
-        
-        // --- MOVED: Profit Information Section to top ---
+        // Create profit information section only
         CreateSectionHeaderStatic("Profit Information", y);
         
         // Create labels for profit information
         CreateInfoLabelPair("Current Positions Profit", "0.00", y);
         CreateInfoLabelPair("Cumulative Closed Profit", "0.00", y);
         CreateInfoLabelPair("Total Profit", "0.00", y);
-        CreateInfoLabelPair("Win Rate", "0%", y);           // New Win Rate row
-        CreateInfoLabelPair("Profit Factor", "0.00", y);    // New Profit Factor row
+        CreateInfoLabelPair("Win Rate", "0%", y);
+        CreateInfoLabelPair("Profit Factor", "0.00", y);
         CreateInfoLabelPair("Total Completed Trades", "0", y);
-        
-        // --- ATR Information Section ---
-        CreateSectionHeaderStatic("ATR Information", y);
-        
-        // Create labels for ATR section
-        CreateInfoLabelPair("ATR Period", IntegerToString(m_settings.atrPeriod), y);
-        CreateInfoLabelPair("ATR Multiplier", DoubleToString(m_settings.atrMultiplier, 2), y);
-        CreateInfoLabelPair("Current ATR Value", "0", y);
-        CreateInfoLabelPair("Upper Band", "0", y);
-        CreateInfoLabelPair("Lower Band", "0", y);
-        
-        // --- Signal Information Section ---
-        CreateSectionHeaderStatic("Signal Information", y);
-        
-        // Create labels for signal section - removed "Signal Type" field, only showing current signal
-        CreateInfoLabelPair("Current Signal", "None", y);
-        
-        // --- Trade Settings Section ---
-        CreateSectionHeaderStatic("Trade Settings", y);
-        
-        // Create labels for trade settings
-        CreateInfoLabelPair("Trading Enabled", m_settings.tradingEnabled ? "ENABLED" : "DISABLED", y);
-        CreateInfoLabelPair("Target Profit", (m_settings.targetProfitPercent > 0.0) ? 
-                      DoubleToString(m_settings.targetProfitPercent, 2) + "%" : "Disabled", y);
-        CreateInfoLabelPair("Stop Loss %", (m_settings.stopLossPercent > 0.0) ? 
-                      DoubleToString(m_settings.stopLossPercent, 2) + "%" : "Disabled", y);
-        CreateInfoLabelPair("Magic Number", IntegerToString(m_settings.magicNumber), y);
-        CreateInfoLabelPair("Risk Percentage", DoubleToString(m_settings.riskPercentage, 2) + "%", y);
-        CreateInfoLabelPair("Stop Loss", IntegerToString(m_settings.stopLossPips) + " pips", y);
-        CreateInfoLabelPair("Risk/Reward", DoubleToString(m_settings.riskRewardRatio, 1), y);
-        CreateInfoLabelPair("Take Profit", m_settings.useTakeProfit ? "Enabled" : "Disabled", y);
         
         // Re-enable chart object creation events
         ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
@@ -376,31 +341,6 @@ private:
         ChartRedraw();
     }
     
-    // Hide or show all panel content objects (except title bar elements)
-    void HidePanelContentObjects(bool hide) {
-        for(int i = 0; i < m_panelObjectCount; i++) {
-            string objName = m_panelObjects[i];
-            
-            // Skip title bar objects
-            if(StringFind(objName, PANEL_NAME + "_Title") >= 0 || 
-               StringFind(objName, PANEL_NAME + "_MinimizeBtn") >= 0 ||
-               objName == PANEL_NAME + "_BG") {
-                continue;
-            }
-            
-            if(ObjectFind(0, objName) >= 0) {
-                ObjectSetInteger(0, objName, OBJPROP_TIMEFRAMES, hide ? OBJ_NO_PERIODS : OBJ_ALL_PERIODS);
-            }
-        }
-    }
-    
-    // Update position section display
-    void UpdatePositionSection(int &y) {
-        // This function is now empty as we're removing the open positions section
-        // We're keeping the function as a stub to avoid changing function signatures
-        return; // Early return, don't create position section
-    }
-    
     // Update panel content with current information - optimized
     void UpdatePanelContent() {
         if (!m_panelInitialized) return;
@@ -414,20 +354,12 @@ private:
         // Temporarily disable object create events for faster handling
         ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, false);
         
-        // Get current values
-        double atrValue = m_atrIndicator.GetCurrentATR();
-        double upperBand = m_atrIndicator.GetUpperBand();
-        double lowerBand = m_atrIndicator.GetLowerBand();
-        
-        // Get current signal
-        SignalInfo currentSignal = m_signalDetector.GetCurrentSignal();
-        
         // Get current profits
         double currentProfit = m_tradeManager.CalculateTotalProfit();
         double cumulativeProfit = m_tradeManager.GetCumulativeProfit();
         double totalProfit = currentProfit + cumulativeProfit;
         
-        // Update Profit Information section (now at the top)
+        // Update Profit Information section
         double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
         double currentProfitPercentage = 0;
         double totalProfitPercentage = 0;
@@ -448,16 +380,16 @@ private:
         color totalProfitColor = (totalProfit >= 0) ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR;
         
         UpdateInfoValue("Current Positions Profit", 
-                      DoubleToString(currentProfit, 2) + " (" + DoubleToString(currentProfitPercentage, 2) + "%)", 
-                      currentProfitColor);
+                       DoubleToString(currentProfit, 2) + " (" + DoubleToString(currentProfitPercentage, 2) + "%)", 
+                       currentProfitColor);
                       
         UpdateInfoValue("Cumulative Closed Profit", 
-                      DoubleToString(cumulativeProfit, 2), 
-                      cumulativeProfitColor);
+                       DoubleToString(cumulativeProfit, 2), 
+                       cumulativeProfitColor);
                       
         UpdateInfoValue("Total Profit", 
-                      DoubleToString(totalProfit, 2) + " (" + DoubleToString(totalProfitPercentage, 2) + "%)", 
-                      totalProfitColor);
+                       DoubleToString(totalProfit, 2) + " (" + DoubleToString(totalProfitPercentage, 2) + "%)", 
+                       totalProfitColor);
         
         // Update Win Rate with W/L counts
         string winRateText = DoubleToString(winRate, 1) + "% (" + 
@@ -470,68 +402,14 @@ private:
         UpdateInfoValue("Profit Factor", pfText, profitFactor >= 1.0 ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR);
                       
         UpdateInfoValue("Total Completed Trades", 
-                      IntegerToString(m_tradeManager.GetTotalTrades()));
+                       IntegerToString(m_tradeManager.GetTotalTrades()));
         
-        // Update ATR Information section
-        UpdateInfoValue("Current ATR Value", DoubleToString(atrValue, 5));
-        UpdateInfoValue("Upper Band", DoubleToString(upperBand, 5));
-        UpdateInfoValue("Lower Band", DoubleToString(lowerBand, 5));
-        
-        // Update Signal Information section - removed "Signal Type" update
-        // Update only the signal display
-        color signalColor = TEXT_COLOR;
-        string signalText = "None";
-        
-        if (currentSignal.hasSignal) {
-            signalText = currentSignal.isBuySignal ? 
-                       "BUY (Touch)" : 
-                       "SELL (Touch)";
-            signalColor = currentSignal.isBuySignal ? m_settings.buyTouchColor : m_settings.sellTouchColor;
-        }
-        
-        UpdateInfoValue("Current Signal", signalText, signalColor);
-        
-        // Update Trade Settings section
-        string tradingStatus;
-        color tradingStatusColor = TEXT_COLOR;
-        
-        if (m_settings.targetReached) {
-            tradingStatus = "DISABLED (Target Reached)";
-            tradingStatusColor = PROFIT_POSITIVE_COLOR;
-        }
-        else if (m_settings.stopLossReached) {
-            tradingStatus = "DISABLED (Stop Loss Reached)";
-            tradingStatusColor = PROFIT_NEGATIVE_COLOR;
-        }
-        else if (!m_settings.tradingEnabled) {
-            tradingStatus = "DISABLED (Manual)";
-            tradingStatusColor = TEXT_COLOR;
-        }
-        else {
-            tradingStatus = "ENABLED";
-            tradingStatusColor = PROFIT_POSITIVE_COLOR;
-        }
-        
-        UpdateInfoValue("Trading Enabled", tradingStatus, tradingStatusColor);
-
         // Dynamically calculate panel height based on content
         int contentEndY = m_panelY + PANEL_PADDING + 30;  // Start after title bar
         
-        // Add height for Profit Information section (header + 6 items) - Added 2 more rows
+        // Add height for Profit Information section (header + 6 items)
         contentEndY += SECTION_SPACING + 18 + 5;  // Header space
-        contentEndY += 6 * (16 + LINE_SPACING);   // 6 items (now including Win Rate and Profit Factor)
-        
-        // Add height for ATR Information section (header + 5 items)
-        contentEndY += SECTION_SPACING + 18 + 5;  // Header space
-        contentEndY += 5 * (16 + LINE_SPACING);   // 5 items
-        
-        // Add height for Signal Information section (header + 1 item) - reduced from 2 items to 1
-        contentEndY += SECTION_SPACING + 18 + 5;  // Header space
-        contentEndY += 1 * (16 + LINE_SPACING);   // 1 item (was 2 items)
-        
-        // Add height for Trade Settings section (header + 8 items)
-        contentEndY += SECTION_SPACING + 18 + 5;  // Header space
-        contentEndY += 8 * (16 + LINE_SPACING);   // 8 items
+        contentEndY += 6 * (16 + LINE_SPACING);   // 6 items
         
         // Add bottom padding
         contentEndY += PANEL_PADDING;
@@ -592,8 +470,8 @@ public:
         m_titleBarHeight = PANEL_PADDING * 2 + 25; // Height of title bar
         
         // Initialize panel position
-        m_panelX = 20;  // Default X position
-        m_panelY = 20;  // Default Y position
+        m_panelX = PANEL_X;  // Use the defined constant
+        m_panelY = PANEL_Y;  // Use the defined constant
         
         // Initialize performance tracking variables
         m_lastUpdateTime = 0;
@@ -617,7 +495,7 @@ public:
         if (m_settings.isOptimization) return true;
         
         // Pre-allocate object array to reduce reallocations
-        ArrayResize(m_panelObjects, 100);
+        ArrayResize(m_panelObjects, 50);  // Reduced size since we have fewer objects
         
         // Create panel structure with optimized object handling
         CreatePanelStructure();
