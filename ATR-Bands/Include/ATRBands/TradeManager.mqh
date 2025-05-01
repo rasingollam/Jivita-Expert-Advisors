@@ -167,7 +167,39 @@ public:
         if (!m_settings.tradingEnabled) return false;
         if (m_settings.targetReached) return false;
         if (m_settings.stopLossReached) return false;
+        
+        // Check if current day is allowed
+        MqlDateTime dt;
+        TimeToStruct(TimeCurrent(), dt);
+        int dayOfWeek = dt.day_of_week;
+        
+        // Check if day of week is allowed
+        switch(dayOfWeek) {
+            case 0: return m_settings.allowSunday;
+            case 1: return m_settings.allowMonday;
+            case 2: return m_settings.allowTuesday;
+            case 3: return m_settings.allowWednesday;
+            case 4: return m_settings.allowThursday;
+            case 5: return m_settings.allowFriday;
+            case 6: return m_settings.allowSaturday;
+            default: return false;
+        }
+        
         return true;
+    }
+    
+    // Get day of week description
+    string GetDayOfWeekDescription(int dayOfWeek) const {
+        switch(dayOfWeek) {
+            case 0: return "Sunday";
+            case 1: return "Monday";
+            case 2: return "Tuesday";
+            case 3: return "Wednesday";
+            case 4: return "Thursday";
+            case 5: return "Friday";
+            case 6: return "Saturday";
+            default: return "Unknown Day";
+        }
     }
     
     // Execute a buy order
@@ -177,6 +209,25 @@ public:
             string reason = "trading disabled";
             if (m_settings.targetReached) reason = "target profit reached";
             if (m_settings.stopLossReached) reason = "stop loss threshold reached";
+            
+            // Check day of week and provide appropriate message
+            MqlDateTime dt;
+            TimeToStruct(TimeCurrent(), dt);
+            int dayOfWeek = dt.day_of_week;
+            
+            bool isDayAllowed = false;
+            switch(dayOfWeek) {
+                case 0: isDayAllowed = m_settings.allowSunday; break;
+                case 1: isDayAllowed = m_settings.allowMonday; break;
+                case 2: isDayAllowed = m_settings.allowTuesday; break;
+                case 3: isDayAllowed = m_settings.allowWednesday; break;
+                case 4: isDayAllowed = m_settings.allowThursday; break;
+                case 5: isDayAllowed = m_settings.allowFriday; break;
+                case 6: isDayAllowed = m_settings.allowSaturday; break;
+            }
+            
+            if (!isDayAllowed) reason = "trading not allowed on " + GetDayOfWeekDescription(dayOfWeek);
+            
             Print("Buy signal ignored: ", reason);
             return false;
         }
@@ -238,6 +289,25 @@ public:
             string reason = "trading disabled";
             if (m_settings.targetReached) reason = "target profit reached";
             if (m_settings.stopLossReached) reason = "stop loss threshold reached";
+            
+            // Check day of week and provide appropriate message
+            MqlDateTime dt;
+            TimeToStruct(TimeCurrent(), dt);
+            int dayOfWeek = dt.day_of_week;
+            
+            bool isDayAllowed = false;
+            switch(dayOfWeek) {
+                case 0: isDayAllowed = m_settings.allowSunday; break;
+                case 1: isDayAllowed = m_settings.allowMonday; break;
+                case 2: isDayAllowed = m_settings.allowTuesday; break;
+                case 3: isDayAllowed = m_settings.allowWednesday; break;
+                case 4: isDayAllowed = m_settings.allowThursday; break;
+                case 5: isDayAllowed = m_settings.allowFriday; break;
+                case 6: isDayAllowed = m_settings.allowSaturday; break;
+            }
+            
+            if (!isDayAllowed) reason = "trading not allowed on " + GetDayOfWeekDescription(dayOfWeek);
+            
             Print("Sell signal ignored: ", reason);
             return false;
         }

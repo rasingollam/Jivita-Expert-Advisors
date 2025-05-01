@@ -41,6 +41,17 @@ input int              EmaTrailingPeriod = 20;         // EMA period for trailin
 input int              StopLossPips = 10;              // Fixed Stop Loss in pips (when not using ATR)
 input bool             UseTakeProfit = true;           // Use Take Profit
 input int              MagicNumber = 12345;            // Magic Number to identify this EA's trades
+
+input group "Trading Schedule"
+input bool             Monday = true;                  // Allow trading on Monday
+input bool             Tuesday = true;                 // Allow trading on Tuesday
+input bool             Wednesday = true;               // Allow trading on Wednesday
+input bool             Thursday = true;                // Allow trading on Thursday
+input bool             Friday = true;                  // Allow trading on Friday
+input bool             Saturday = false;               // Allow trading on Saturday
+input bool             Sunday = false;                 // Allow trading on Sunday
+
+input group "Risk Management"
 input double           TargetProfitPercent = 0.0;      // Target profit percentage (0 = disabled)
 input double           StopLossPercent = 0.0;          // Stop trading when drawdown exceeds this percentage (0 = disabled)
 
@@ -58,6 +69,23 @@ datetime lastLogTime = 0;  // For limiting debug output
 // Default values for removed parameters
 const int DEFAULT_SIGNAL_SIZE = 3;  // Default signal size
 const bool DEFAULT_TEST_MODE = false;  // Default test mode setting
+
+// Helper function to get the textual description of a day of week
+string TimeDayOfWeekDescription(datetime time) {
+    MqlDateTime dt;
+    TimeToStruct(time, dt);
+    
+    switch(dt.day_of_week) {
+        case 0: return "Sunday";
+        case 1: return "Monday";
+        case 2: return "Tuesday";
+        case 3: return "Wednesday";
+        case 4: return "Thursday";
+        case 5: return "Friday";
+        case 6: return "Saturday";
+        default: return "Unknown Day";
+    }
+}
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -98,7 +126,9 @@ int OnInit()
                            RiskRewardRatio, RiskPercentage, StopLossPips, 
                            UseAtrStopLoss, AtrStopLossMultiplier,
                            UseEmaTrailingStop, EmaTrailingPeriod,
-                           UseTakeProfit, MagicNumber, TargetProfitPercent, 
+                           UseTakeProfit, MagicNumber, 
+                           Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday,
+                           TargetProfitPercent, 
                            StopLossPercent, isOptimization, DEFAULT_TEST_MODE)) {
       Print("Failed to initialize settings - check above for detailed error");
       return INIT_FAILED;
@@ -255,6 +285,28 @@ void OnTick()
       // Calculate ATR bands
       if(!atrIndicator.Calculate()) {
          Print("ERROR: ATR calculation failed at bar time: ", TimeToString(lastBarTime));
+         return;
+      }
+      
+      // Check if trading is allowed on the current day
+      MqlDateTime dt;
+      TimeToStruct(TimeCurrent(), dt);
+      int dayOfWeek = dt.day_of_week;
+      bool isDayAllowed = false;
+      
+      // Check if day of week is allowed
+      switch(dayOfWeek) {
+         case 0: isDayAllowed = settings.allowSunday; break;
+         case 1: isDayAllowed = settings.allowMonday; break;
+         case 2: isDayAllowed = settings.allowTuesday; break;
+         case 3: isDayAllowed = settings.allowWednesday; break;
+         case 4: isDayAllowed = settings.allowThursday; break;
+         case 5: isDayAllowed = settings.allowFriday; break;
+         case 6: isDayAllowed = settings.allowSaturday; break;
+      }
+      
+      if(!isDayAllowed) {
+         Print("Trading not allowed on ", TimeDayOfWeekDescription(TimeCurrent()));
          return;
       }
       

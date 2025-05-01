@@ -39,6 +39,15 @@ public:
     bool useTakeProfit;
     int magicNumber;
     
+    // Trading schedule settings
+    bool allowMonday;
+    bool allowTuesday;
+    bool allowWednesday;
+    bool allowThursday;
+    bool allowFriday;
+    bool allowSaturday;
+    bool allowSunday;
+    
     // Target profit and stop loss settings
     double targetProfitPercent;
     double stopLossPercent;
@@ -80,6 +89,14 @@ public:
         useTakeProfit = true;
         magicNumber = 12345;
         
+        allowMonday = true;
+        allowTuesday = true;
+        allowWednesday = true;
+        allowThursday = true;
+        allowFriday = true;
+        allowSaturday = true;
+        allowSunday = true;
+        
         targetProfitPercent = 0.0;
         stopLossPercent = 0.0;
         targetReached = false;
@@ -115,6 +132,13 @@ public:
         int p_emaTrailingPeriod,         // New parameter
         bool p_useTakeProfit,
         int p_magicNumber,
+        bool p_allowMonday,
+        bool p_allowTuesday,
+        bool p_allowWednesday,
+        bool p_allowThursday,
+        bool p_allowFriday,
+        bool p_allowSaturday,
+        bool p_allowSunday,
         double p_targetProfitPercent,
         double p_stopLossPercent,
         bool p_isOptimization,
@@ -207,6 +231,15 @@ public:
         useTakeProfit = p_useTakeProfit;
         magicNumber = p_magicNumber;
         
+        // Apply trading schedule settings
+        allowMonday = p_allowMonday;
+        allowTuesday = p_allowTuesday;
+        allowWednesday = p_allowWednesday;
+        allowThursday = p_allowThursday;
+        allowFriday = p_allowFriday;
+        allowSaturday = p_allowSaturday;
+        allowSunday = p_allowSunday;
+        
         targetProfitPercent = p_targetProfitPercent;
         stopLossPercent = p_stopLossPercent;
         targetReached = false;
@@ -228,5 +261,38 @@ public:
     // Get start time for history tracking
     datetime GetStartTime() const {
         return startTime;
+    }
+    
+    // Helper function to check if trading is allowed on the current day
+    bool IsTradingAllowedToday() const {
+        MqlDateTime dt;
+        TimeToStruct(TimeCurrent(), dt);
+        int dayOfWeek = dt.day_of_week;
+        
+        // Check if trading is allowed for this day
+        switch(dayOfWeek) {
+            case 0: return allowSunday;
+            case 1: return allowMonday;
+            case 2: return allowTuesday;
+            case 3: return allowWednesday;
+            case 4: return allowThursday;
+            case 5: return allowFriday;
+            case 6: return allowSaturday;
+            default: return false;
+        }
+    }
+    
+    // Get the description of the day of week
+    string GetDayOfWeekDescription(int dayOfWeek) const {
+        switch(dayOfWeek) {
+            case 0: return "Sunday";
+            case 1: return "Monday";
+            case 2: return "Tuesday";
+            case 3: return "Wednesday";
+            case 4: return "Thursday";
+            case 5: return "Friday";
+            case 6: return "Saturday";
+            default: return "Unknown Day";
+        }
     }
 };
