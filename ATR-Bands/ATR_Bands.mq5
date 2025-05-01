@@ -141,9 +141,9 @@ int OnInit()
       }
    }
    
-   // Enable chart events for UI interaction
+   // Enable chart events for UI interaction - only for object clicks, not mouse move
    // Fixed function parameters - ChartSetInteger requires chart_id, property_id, property_value
-   ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, true);
+   // ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, true); // Remove this line
    ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
    ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, true);
    

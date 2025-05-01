@@ -53,11 +53,6 @@ private:
     int m_panelX;
     int m_panelY;
     
-    // Panel dragging related variables
-    bool m_isDragging;
-    int m_dragStartX;
-    int m_dragStartY;
-    
     // Add performance tracking variables
     datetime m_lastUpdateTime;
     bool m_needsFullRedraw;
@@ -582,26 +577,6 @@ private:
         ChartRedraw();
     }
     
-    // Check if mouse is over panel title bar
-    bool IsMouseOverTitleBar(int x, int y) {
-        return (x >= m_panelX && x <= m_panelX + PANEL_WIDTH &&
-                y >= m_panelY && y <= m_panelY + m_titleBarHeight);
-    }
-    
-    // Create visual signal on chart - fixed arrowCode type
-    void CreateSignalArrow(int i, string signalType, bool isBuy, double price, color arrowColor) {
-        if (m_settings.isOptimization) return;
-        
-        string signal_name = "ATRSignal_" + signalType + (isBuy ? "Buy_" : "Sell_") + IntegerToString(i);
-        ENUM_OBJECT arrowCode = isBuy ? OBJ_ARROW_BUY : OBJ_ARROW_SELL; // Fix: Use ENUM_OBJECT type
-        
-        if (ObjectCreate(0, signal_name, arrowCode, 0, m_atrIndicator.GetTime(i), price)) {
-            ObjectSetInteger(0, signal_name, OBJPROP_COLOR, arrowColor);
-            ObjectSetInteger(0, signal_name, OBJPROP_WIDTH, m_settings.signalSize);
-            ObjectSetInteger(0, signal_name, OBJPROP_ANCHOR, isBuy ? ANCHOR_BOTTOM : ANCHOR_TOP);
-        }
-    }
-    
 public:
     // Constructor with renamed parameters to avoid shadowing
     UIManager(EASettings* p_settings, ATRIndicator* p_atrIndicator, SignalDetector* p_signalDetector, TradeManager* p_tradeManager) {
@@ -619,11 +594,6 @@ public:
         // Initialize panel position
         m_panelX = 20;  // Default X position
         m_panelY = 20;  // Default Y position
-        
-        // Initialize dragging variables
-        m_isDragging = false;
-        m_dragStartX = 0;
-        m_dragStartY = 0;
         
         // Initialize performance tracking variables
         m_lastUpdateTime = 0;
@@ -688,43 +658,6 @@ public:
             if(sparam == PANEL_NAME + "_MinimizeBtn") {
                 ToggleMinimized();
                 return true;
-            }
-        }
-        
-        // Handle mouse events for panel dragging
-        if(id == CHARTEVENT_MOUSE_MOVE) {
-            // Convert mouse coordinates
-            int x = (int)lparam;
-            int y = (int)dparam;
-            
-            // Get mouse button state - fix boolean expression issue
-            bool leftButtonPressed = ((int)sparam & 1) != 0;
-            
-            // Handle mouse move with left button pressed (dragging)
-            if(leftButtonPressed) { 
-                if(m_isDragging) {
-                    // Calculate the new panel position
-                    int newX = m_panelX + (x - m_dragStartX);
-                    int newY = m_panelY + (y - m_dragStartY);
-                    
-                    // Update panel position
-                    UpdatePanelPosition(newX, newY);
-                    return true;
-                } 
-                else if(IsMouseOverTitleBar(x, y)) {
-                    // Start dragging
-                    m_isDragging = true;
-                    m_dragStartX = x;
-                    m_dragStartY = y;
-                    return true;
-                }
-            }
-            else {
-                // Mouse button released - end dragging
-                if(m_isDragging) {
-                    m_isDragging = false;
-                    return true;
-                }
             }
         }
         
