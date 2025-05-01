@@ -34,6 +34,8 @@ public:
     int stopLossPips;
     bool useAtrStopLoss;        // Whether to use ATR-based stop loss
     double atrStopLossMultiplier; // ATR multiplier for stop loss
+    bool useEmaTrailingStop;       // Whether to use EMA-based trailing stop
+    int emaTrailingPeriod;         // EMA period for trailing stop
     bool useTakeProfit;
     int magicNumber;
     
@@ -73,6 +75,8 @@ public:
         stopLossPips = 10;
         useAtrStopLoss = false;         // Default to fixed pips stop loss
         atrStopLossMultiplier = 1.0;    // Default multiplier of 1.0
+        useEmaTrailingStop = false;     // Default to not using EMA trailing stop
+        emaTrailingPeriod = 14;         // Default EMA period
         useTakeProfit = true;
         magicNumber = 12345;
         
@@ -107,6 +111,8 @@ public:
         int p_stopLossPips,
         bool p_useAtrStopLoss,           // New parameter
         double p_atrStopLossMultiplier,  // New parameter
+        bool p_useEmaTrailingStop,       // New parameter
+        int p_emaTrailingPeriod,         // New parameter
         bool p_useTakeProfit,
         int p_magicNumber,
         double p_targetProfitPercent,
@@ -155,6 +161,11 @@ public:
             return false;
         }
         
+        if (p_emaTrailingPeriod <= 0) {
+            Print("EMA trailing period must be positive");
+            return false;
+        }
+        
         if (p_magicNumber <= 0) {
             Print("Magic number must be positive");
             return false;
@@ -191,6 +202,8 @@ public:
         stopLossPips = p_stopLossPips;
         useAtrStopLoss = p_useAtrStopLoss;
         atrStopLossMultiplier = p_atrStopLossMultiplier;
+        useEmaTrailingStop = p_useEmaTrailingStop;
+        emaTrailingPeriod = p_emaTrailingPeriod;
         useTakeProfit = p_useTakeProfit;
         magicNumber = p_magicNumber;
         

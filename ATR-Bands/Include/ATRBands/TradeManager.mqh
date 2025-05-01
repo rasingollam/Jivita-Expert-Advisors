@@ -509,4 +509,70 @@ public:
     int GetLosingTrades() const {
         return m_losingTrades;
     }
+    
+    // Process trailing stop based on EMA crossover
+    void ProcessTrailingStop() {
+        // Skip if EMA trailing stop is not enabled
+        if (!m_settings.useEmaTrailingStop) return;
+        
+        // Get current EMA value
+        double emaValue = m_atrIndicator.GetCurrentEMA();
+        if (emaValue <= 0) {
+            Print("Warning: Invalid EMA value for trailing stop");
+            return;
+        }
+        
+        // Get the close price of the last completed bar
+        double lastClosePrice = iClose(_Symbol, PERIOD_CURRENT, 1);
+        
+        Print("EMA Trailing Stop check - EMA: ", DoubleToString(emaValue, _Digits), 
+              ", Last close: ", DoubleToString(lastClosePrice, _Digits));
+        
+        // Process all positions
+        for (int i = PositionsTotal() - 1; i >= 0; i--) {
+            ulong ticket = PositionGetTicket(i);
+            
+            // Skip positions that don't belong to this EA
+            if (!PositionSelectByTicket(ticket) || 
+                PositionGetString(POSITION_SYMBOL) != _Symbol ||
+                PositionGetInteger(POSITION_MAGIC) != m_settings.magicNumber) {
+                continue;
+            }
+            
+            // Get position type (buy or sell)
+            ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+            double currentProfit = PositionGetDouble(POSITION_PROFIT);
+            
+            bool closePosition = false;
+            
+            // Decide whether to close position based on EMA crossing
+            if (posType == POSITION_TYPE_BUY) {
+                // For buy positions, close if price closes below EMA
+                if (lastClosePrice < emaValue) {
+                    closePosition = true;
+                    Print("EMA Trailing Stop: Buy position close triggered - Price ", 
+                          DoubleToString(lastClosePrice, _Digits), 
+                          " closed below EMA ", DoubleToString(emaValue, _Digits));
+                }
+            }
+            else if (posType == POSITION_TYPE_SELL) {
+                // For sell positions, close if price closes above EMA
+                if (lastClosePrice > emaValue) {
+                    closePosition = true;
+                    Print("EMA Trailing Stop: Sell position close triggered - Price ", 
+                          DoubleToString(lastClosePrice, _Digits), 
+                          " closed above EMA ", DoubleToString(emaValue, _Digits));
+                }
+            }
+            
+            // Close the position if trailing stop is triggered
+            if (closePosition) {
+                if (!m_trade.PositionClose(ticket)) {
+                    Print("Failed to close position by EMA trailing stop: ", GetLastError());
+                } else {
+                    Print("Position #", ticket, " closed by EMA trailing stop");
+                }
+            }
+        }
+    }
 };

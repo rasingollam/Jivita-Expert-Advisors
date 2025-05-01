@@ -12,10 +12,18 @@ class ATRIndicator
 {
 private:
     EASettings* m_settings;
+    
+    // ATR calculation variables
+    double m_currentATR;
+    double m_upperBand;
+    double m_lowerBand;
     int m_atrHandle;
     
+    // EMA calculation variables
+    int m_emaHandle;
+    double m_currentEMA;
+    
     // Store current ATR values
-    double m_currentATR;
     double m_currentUpperBand;
     double m_currentLowerBand;
     
@@ -140,14 +148,13 @@ public:
         m_currentATR = 0;
         m_currentUpperBand = 0;
         m_currentLowerBand = 0;
+        m_emaHandle = INVALID_HANDLE;
+        m_currentEMA = 0;
     }
     
     // Destructor
     ~ATRIndicator() {
-        if (m_atrHandle != INVALID_HANDLE) {
-            IndicatorRelease(m_atrHandle);
-            m_atrHandle = INVALID_HANDLE;
-        }
+        ReleaseHandles();
     }
     
     // Initialize the indicator with improved error handling
@@ -175,6 +182,15 @@ public:
             Print("Failed to create ATR indicator handle. Error code: ", errorCode, 
                   " (", ErrorDescription(errorCode), ")");
             return false;
+        }
+        
+        // Initialize EMA indicator handle if EMA trailing is enabled
+        if(m_settings.useEmaTrailingStop) {
+            m_emaHandle = iMA(_Symbol, PERIOD_CURRENT, m_settings.emaTrailingPeriod, 0, MODE_EMA, PRICE_CLOSE);
+            if(m_emaHandle == INVALID_HANDLE) {
+                Print("Failed to create EMA indicator handle");
+                return false;
+            }
         }
         
         // Initialize arrays
@@ -263,6 +279,22 @@ public:
             DrawBands(dataCount);
         }
         
+        // Calculate EMA if trailing is enabled
+        if(m_settings.useEmaTrailingStop) {
+            double emaBuffer[];
+            ArraySetAsSeries(emaBuffer, true);
+            
+            // Copy EMA values
+            int copied = CopyBuffer(m_emaHandle, 0, 0, 2, emaBuffer);
+            if(copied < 2) {
+                Print("Failed to copy EMA values: ", GetLastError());
+                return false;
+            }
+            
+            // Update current EMA value
+            m_currentEMA = emaBuffer[0];
+        }
+        
         if(m_settings.testMode) {
             Print("ATR calculation complete - Current ATR: ", DoubleToString(m_currentATR, 5));
         }
@@ -318,5 +350,23 @@ public:
         if (index >= 0 && index < ArraySize(m_timeValues))
             return m_timeValues[index];
         return 0;
+    }
+    
+    // Get current EMA value
+    double GetCurrentEMA() const {
+        return m_currentEMA;
+    }
+    
+    // Release indicator handles when object is destroyed
+    void ReleaseHandles() {
+        if(m_atrHandle != INVALID_HANDLE) {
+            IndicatorRelease(m_atrHandle);
+            m_atrHandle = INVALID_HANDLE;
+        }
+        
+        if(m_emaHandle != INVALID_HANDLE) {
+            IndicatorRelease(m_emaHandle);
+            m_emaHandle = INVALID_HANDLE;
+        }
     }
 };

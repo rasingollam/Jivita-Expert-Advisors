@@ -36,6 +36,8 @@ input double           RiskRewardRatio = 1.5;          // Risk to Reward Ratio (
 input double           RiskPercentage = 1.0;           // Risk percentage of account
 input bool             UseAtrStopLoss = true;          // Use ATR-based stop loss
 input double           AtrStopLossMultiplier = 1.0;    // ATR multiplier for stop loss
+input bool             UseEmaTrailingStop = false;     // Use EMA-based trailing stop
+input int              EmaTrailingPeriod = 20;         // EMA period for trailing stop
 input int              StopLossPips = 10;              // Fixed Stop Loss in pips (when not using ATR)
 input bool             UseTakeProfit = true;           // Use Take Profit
 input int              MagicNumber = 12345;            // Magic Number to identify this EA's trades
@@ -95,6 +97,7 @@ int OnInit()
                            BuyTouchColor, SellTouchColor, EnableTrading, 
                            RiskRewardRatio, RiskPercentage, StopLossPips, 
                            UseAtrStopLoss, AtrStopLossMultiplier,
+                           UseEmaTrailingStop, EmaTrailingPeriod,
                            UseTakeProfit, MagicNumber, TargetProfitPercent, 
                            StopLossPercent, isOptimization, DEFAULT_TEST_MODE)) {
       Print("Failed to initialize settings - check above for detailed error");
@@ -259,6 +262,11 @@ void OnTick()
       Print("ATR value: ", DoubleToString(atrIndicator.GetCurrentATR(), _Digits),
             ", Upper band: ", DoubleToString(atrIndicator.GetUpperBand(), _Digits),
             ", Lower band: ", DoubleToString(atrIndicator.GetLowerBand(), _Digits));
+      
+      // Apply EMA trailing stop if enabled
+      if(settings.useEmaTrailingStop) {
+         tradeManager.ProcessTrailingStop();
+      }
       
       // Look for touch signals only
       SignalInfo signal = signalDetector.DetectSignals();
