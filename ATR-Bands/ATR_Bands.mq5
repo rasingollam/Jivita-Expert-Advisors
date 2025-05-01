@@ -34,7 +34,9 @@ input group "Trade Settings"
 input bool             EnableTrading = true;           // Enable automatic trading
 input double           RiskRewardRatio = 1.5;          // Risk to Reward Ratio (1.0 = 1:1)
 input double           RiskPercentage = 1.0;           // Risk percentage of account
-input int              StopLossPips = 10;              // Stop Loss in pips
+input bool             UseAtrStopLoss = true;          // Use ATR-based stop loss
+input double           AtrStopLossMultiplier = 1.0;    // ATR multiplier for stop loss
+input int              StopLossPips = 10;              // Fixed Stop Loss in pips (when not using ATR)
 input bool             UseTakeProfit = true;           // Use Take Profit
 input int              MagicNumber = 12345;            // Magic Number to identify this EA's trades
 input double           TargetProfitPercent = 0.0;      // Target profit percentage (0 = disabled)
@@ -83,7 +85,6 @@ int OnInit()
       Print("Critical error: Failed to allocate memory for settings");
       return INIT_FAILED;
    }
-   
    Print("Attempting to initialize settings with parameters...");
    Print("ATR_Period:", ATR_Period, " ATR_Multiplier:", ATR_Multiplier);
    
@@ -93,6 +94,7 @@ int OnInit()
                            SIGNAL_TYPE_TOUCH, DEFAULT_SIGNAL_SIZE, clrNONE, clrNONE, 
                            BuyTouchColor, SellTouchColor, EnableTrading, 
                            RiskRewardRatio, RiskPercentage, StopLossPips, 
+                           UseAtrStopLoss, AtrStopLossMultiplier,
                            UseTakeProfit, MagicNumber, TargetProfitPercent, 
                            StopLossPercent, isOptimization, DEFAULT_TEST_MODE)) {
       Print("Failed to initialize settings - check above for detailed error");
@@ -106,7 +108,6 @@ int OnInit()
       Print("Critical error: Failed to allocate memory for ATR indicator");
       return INIT_FAILED;
    }
-   
    // Enhanced error reporting for component initialization
    if(!atrIndicator.Initialize(settings)) {
       Print("ERROR: ATR indicator initialization failed - Period: ", settings.atrPeriod);
@@ -121,7 +122,7 @@ int OnInit()
    }
    
    // Trade manager
-   tradeManager = new TradeManager(settings);
+   tradeManager = new TradeManager(settings, atrIndicator);
    if(tradeManager == NULL) {
       Print("Critical error: Failed to allocate memory for trade manager");
       return INIT_FAILED;
@@ -134,7 +135,6 @@ int OnInit()
          Print("Critical error: Failed to allocate memory for UI manager");
          return INIT_FAILED;
       }
-      
       if(!uiManager.Initialize()) {
          Print("Failed to initialize UI manager");
          return INIT_FAILED;
@@ -142,8 +142,6 @@ int OnInit()
    }
    
    // Enable chart events for UI interaction - only for object clicks, not mouse move
-   // Fixed function parameters - ChartSetInteger requires chart_id, property_id, property_value
-   // ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, true); // Remove this line
    ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
    ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, true);
    
@@ -175,17 +173,14 @@ void OnDeinit(const int reason)
       delete tradeManager;
       tradeManager = NULL;
    }
-   
    if(signalDetector != NULL) {
       delete signalDetector;
       signalDetector = NULL;
    }
-   
    if(atrIndicator != NULL) {
       delete atrIndicator;
       atrIndicator = NULL;
    }
-   
    if(settings != NULL) {
       delete settings;
       settings = NULL;
@@ -209,12 +204,10 @@ void OnDeinit(const int reason)
 bool IsNewBar()
 {
    datetime currentBarTime = iTime(_Symbol, _Period, 0);
-   
    if (lastBarTime == 0 || currentBarTime > lastBarTime) {
       lastBarTime = currentBarTime;
       return true;
    }
-   
    return false;
 }
 
@@ -237,11 +230,9 @@ void OnTick()
          if(atrIndicator == NULL) missingComponents += "ATR Indicator, ";
          if(signalDetector == NULL) missingComponents += "Signal Detector, ";
          if(tradeManager == NULL) missingComponents += "Trade Manager, ";
-         
          // Remove trailing comma and space
          if(StringLen(missingComponents) > 2)
             missingComponents = StringSubstr(missingComponents, 0, StringLen(missingComponents) - 2);
-            
          Print("EA components not properly initialized: ", missingComponents);
          errorReported = true;
       }
@@ -329,7 +320,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 void OnChartEvent(const int id, 
                   const long &lparam, 
                   const double &dparam, 
-                  const string &sparam)
+                  const string &sparam) 
 {
    // Pass all chart events to UI manager for handling button clicks and dragging
    if(uiManager != NULL && !MQLInfoInteger(MQL_TESTER)) {

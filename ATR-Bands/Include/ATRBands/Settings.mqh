@@ -6,217 +6,214 @@
 #include "Enums.mqh"
 
 //+------------------------------------------------------------------+
-//| Class to encapsulate all EA settings                             |
+//| Class to store EA settings                                       |
 //+------------------------------------------------------------------+
 class EASettings
 {
-private:
-    // Start time for the EA
-    datetime m_startTime;
-
 public:
-    // ATR settings
+    // ATR indicator settings
     int atrPeriod;
     double atrMultiplier;
-    ENUM_APPLIED_PRICE priceType;
-    
-    // Visual settings
+    ENUM_APPLIED_PRICE price;
     color upperBandColor;
     color lowerBandColor;
     int lineWidth;
-    color buySignalColor;
-    color sellSignalColor;
+    
+    // Signal settings
+    ENUM_SIGNAL_TYPE signalType;
+    int signalSize;
+    color crossColor;
+    color reversalColor;
     color buyTouchColor;
     color sellTouchColor;
-    int signalSize;
     
     // Trading settings
-    bool enableTrading;
-    ENUM_SIGNAL_TYPE signalType;
+    bool tradingEnabled;
     double riskRewardRatio;
     double riskPercentage;
     int stopLossPips;
+    bool useAtrStopLoss;        // Whether to use ATR-based stop loss
+    double atrStopLossMultiplier; // ATR multiplier for stop loss
     bool useTakeProfit;
     int magicNumber;
+    
+    // Target profit and stop loss settings
     double targetProfitPercent;
     double stopLossPercent;
-    
-    // Runtime settings
-    bool isOptimization;
-    bool tradingEnabled;
     bool targetReached;
     bool stopLossReached;
-    bool testMode;         // Add test mode flag
+    
+    // Optimization and testing flags
+    bool isOptimization;
+    bool testMode;
+    
+    // Start time for history tracking
+    datetime startTime;
     
     // Constructor
     EASettings() {
-        m_startTime = 0;
+        // Set default values
+        atrPeriod = 14;
+        atrMultiplier = 1.0;
+        price = PRICE_CLOSE;
+        upperBandColor = clrRed;
+        lowerBandColor = clrBlue;
+        lineWidth = 1;
+        
+        signalType = SIGNAL_TYPE_TOUCH;
+        signalSize = 3;
+        crossColor = clrYellow;
+        reversalColor = clrMagenta;
+        buyTouchColor = clrLime;
+        sellTouchColor = clrRed;
+        
         tradingEnabled = true;
+        riskRewardRatio = 1.5;
+        riskPercentage = 1.0;
+        stopLossPips = 10;
+        useAtrStopLoss = false;         // Default to fixed pips stop loss
+        atrStopLossMultiplier = 1.0;    // Default multiplier of 1.0
+        useTakeProfit = true;
+        magicNumber = 12345;
+        
+        targetProfitPercent = 0.0;
+        stopLossPercent = 0.0;
         targetReached = false;
         stopLossReached = false;
-        testMode = false;  // Default to false
+        
+        isOptimization = false;
+        testMode = false;
+        
+        startTime = TimeCurrent();
     }
     
-    // Improved initialization with validation and better error handling
-    bool Initialize(int p_atrPeriod, double p_atrMultiplier, ENUM_APPLIED_PRICE p_price,
-                    color p_upperColor, color p_lowerColor, int p_lineW,
-                    ENUM_SIGNAL_TYPE p_sigType, int p_sigSize, color p_buySigColor, color p_sellSigColor,
-                    color p_buyTColor, color p_sellTColor, bool p_enableTrade,
-                    double p_rrRatio, double p_riskPct, int p_slPips,
-                    bool p_useTP, int p_magic, double p_targetProfit, double p_stopLossPct,
-                    bool p_isOptimize, bool p_testMode = false)  // Add test mode parameter
-    {
-        // Detailed validation with specific error messages and auto-corrections for tester mode
-        bool isTester = MQLInfoInteger(MQL_TESTER);
-        string errorMsg = "";
-        
-        // --- Handle ATR Period ---
-        if(p_atrPeriod <= 0) {
-            if(isTester) {
-                p_atrPeriod = 14;  // Default fallback value for tester
-                Print("Warning: Invalid ATR period, using default value: ", p_atrPeriod);
-            } else {
-                errorMsg = StringFormat("Invalid ATR period: %d, must be > 0", p_atrPeriod);
-                Print(errorMsg);
-                return false;
-            }
+    // Initialize with user settings
+    bool Initialize(
+        int p_atrPeriod,
+        double p_atrMultiplier,
+        ENUM_APPLIED_PRICE p_price,
+        color p_upperBandColor,
+        color p_lowerBandColor,
+        int p_lineWidth,
+        ENUM_SIGNAL_TYPE p_signalType,
+        int p_signalSize,
+        color p_crossColor,
+        color p_reversalColor,
+        color p_buyTouchColor,
+        color p_sellTouchColor,
+        bool p_tradingEnabled,
+        double p_riskRewardRatio,
+        double p_riskPercentage,
+        int p_stopLossPips,
+        bool p_useAtrStopLoss,           // New parameter
+        double p_atrStopLossMultiplier,  // New parameter
+        bool p_useTakeProfit,
+        int p_magicNumber,
+        double p_targetProfitPercent,
+        double p_stopLossPercent,
+        bool p_isOptimization,
+        bool p_testMode
+    ) {
+        // Validate inputs
+        if (p_atrPeriod <= 0) {
+            Print("ATR period must be positive");
+            return false;
         }
         
-        // --- Handle ATR Multiplier --- MODIFIED TO ALLOW ZERO
-        if(p_atrMultiplier < 0) {  // Changed from <= 0 to < 0 to allow zero
-            if(isTester) {
-                p_atrMultiplier = 1.0;  // Default fallback value for tester
-                Print("Warning: Invalid ATR multiplier, using default value: ", p_atrMultiplier);
-            } else {
-                errorMsg = StringFormat("Invalid ATR multiplier: %.2f, must be >= 0", p_atrMultiplier); // Changed error message
-                Print(errorMsg);
-                return false;
-            }
+        if (p_atrMultiplier <= 0) {
+            Print("ATR multiplier must be positive");
+            return false;
         }
         
-        // --- Handle Signal Size ---
-        if(p_sigSize <= 0) {
-            if(isTester) {
-                p_sigSize = 3;  // Default fallback value for tester
-                Print("Warning: Invalid signal size, using default value: ", p_sigSize);
-            } else {
-                errorMsg = StringFormat("Invalid signal size: %d, must be > 0", p_sigSize);
-                Print(errorMsg);
-                return false;
-            }
+        if (p_lineWidth <= 0) {
+            Print("Line width must be positive");
+            return false;
         }
         
-        // --- Handle Risk/Reward Ratio ---
-        if(p_rrRatio <= 0) {
-            if(isTester) {
-                p_rrRatio = 1.0;  // Default fallback value for tester
-                Print("Warning: Invalid risk/reward ratio, using default value: ", p_rrRatio);
-            } else {
-                errorMsg = StringFormat("Invalid risk/reward ratio: %.2f, must be > 0", p_rrRatio);
-                Print(errorMsg);
-                return false;
-            }
+        if (p_signalSize <= 0) {
+            Print("Signal size must be positive");
+            return false;
         }
         
-        // --- Handle Risk Percentage ---
-        if(p_riskPct <= 0 || p_riskPct > 100) {
-            if(isTester) {
-                p_riskPct = 1.0;  // Default fallback value for tester
-                Print("Warning: Invalid risk percentage, using default value: ", p_riskPct);
-            } else {
-                errorMsg = StringFormat("Invalid risk percentage: %.2f, must be > 0 and <= 100", p_riskPct);
-                Print(errorMsg);
-                return false;
-            }
+        if (p_riskRewardRatio <= 0) {
+            Print("Risk reward ratio must be positive");
+            return false;
         }
         
-        // --- Handle Stop Loss Pips ---
-        if(p_slPips <= 0) {
-            if(isTester) {
-                p_slPips = 20;  // Default fallback value for tester
-                Print("Warning: Invalid stop loss pips, using default value: ", p_slPips);
-            } else {
-                errorMsg = StringFormat("Invalid stop loss pips: %d, must be > 0", p_slPips);
-                Print(errorMsg);
-                return false;
-            }
+        if (p_riskPercentage <= 0) {
+            Print("Risk percentage must be positive");
+            return false;
         }
         
-        // --- Handle Target Profit ---
-        if(p_targetProfit < 0) {
-            if(isTester) {
-                p_targetProfit = 0.0;  // Default fallback value for tester
-                Print("Warning: Invalid target profit, using default value: ", p_targetProfit);
-            } else {
-                errorMsg = StringFormat("Invalid target profit: %.2f, must be >= 0", p_targetProfit);
-                Print(errorMsg);
-                return false;
-            }
+        if (p_stopLossPips <= 0) {
+            Print("Stop loss pips must be positive");
+            return false;
         }
         
-        // --- Handle Stop Loss Percentage ---
-        if(p_stopLossPct < 0) {
-            if(isTester) {
-                p_stopLossPct = 0.0;  // Default fallback value for tester
-                Print("Warning: Invalid stop loss percentage, using default value: ", p_stopLossPct);
-            } else {
-                errorMsg = StringFormat("Invalid stop loss percentage: %.2f, must be >= 0", p_stopLossPct);
-                Print(errorMsg);
-                return false;
-            }
+        if (p_atrStopLossMultiplier <= 0) {
+            Print("ATR stop loss multiplier must be positive");
+            return false;
         }
         
-        // Store the start time
-        m_startTime = TimeCurrent();
+        if (p_magicNumber <= 0) {
+            Print("Magic number must be positive");
+            return false;
+        }
         
-        // ATR settings
-        this.atrPeriod = p_atrPeriod;
-        this.atrMultiplier = p_atrMultiplier;
-        this.priceType = p_price;
+        if (p_targetProfitPercent < 0) {
+            Print("Target profit percent must be non-negative");
+            return false;
+        }
         
-        // Visual settings
-        this.upperBandColor = p_upperColor;
-        this.lowerBandColor = p_lowerColor;
-        this.lineWidth = p_lineW;
-        this.signalType = p_sigType;
-        this.signalSize = p_sigSize;
-        this.buySignalColor = p_buySigColor;
-        this.sellSignalColor = p_sellSigColor;
-        this.buyTouchColor = p_buyTColor;
-        this.sellTouchColor = p_sellTColor;
+        if (p_stopLossPercent < 0) {
+            Print("Stop loss percent must be non-negative");
+            return false;
+        }
         
-        // Trading settings
-        this.enableTrading = p_enableTrade;
-        this.riskRewardRatio = p_rrRatio;
-        this.riskPercentage = p_riskPct;
-        this.stopLossPips = p_slPips;
-        this.useTakeProfit = p_useTP;
-        this.magicNumber = p_magic;
-        this.targetProfitPercent = p_targetProfit;
-        this.stopLossPercent = p_stopLossPct;
+        // Apply values
+        atrPeriod = p_atrPeriod;
+        atrMultiplier = p_atrMultiplier;
+        price = p_price;
+        upperBandColor = p_upperBandColor;
+        lowerBandColor = p_lowerBandColor;
+        lineWidth = p_lineWidth;
         
-        // Runtime settings
-        this.isOptimization = p_isOptimize;
-        this.tradingEnabled = p_enableTrade;
-        this.targetReached = false;
-        this.stopLossReached = false;
-        this.testMode = p_testMode;  // Set test mode flag
+        signalType = p_signalType;
+        signalSize = p_signalSize;
+        crossColor = p_crossColor;
+        reversalColor = p_reversalColor;
+        buyTouchColor = p_buyTouchColor;
+        sellTouchColor = p_sellTouchColor;
         
-        Print("EASettings initialized successfully with ATR multiplier: ", this.atrMultiplier);
+        tradingEnabled = p_tradingEnabled;
+        riskRewardRatio = p_riskRewardRatio;
+        riskPercentage = p_riskPercentage;
+        stopLossPips = p_stopLossPips;
+        useAtrStopLoss = p_useAtrStopLoss;
+        atrStopLossMultiplier = p_atrStopLossMultiplier;
+        useTakeProfit = p_useTakeProfit;
+        magicNumber = p_magicNumber;
+        
+        targetProfitPercent = p_targetProfitPercent;
+        stopLossPercent = p_stopLossPercent;
+        targetReached = false;
+        stopLossReached = false;
+        
+        isOptimization = p_isOptimization;
+        testMode = p_testMode;
+        
+        startTime = TimeCurrent();
+        
         return true;
     }
     
-    // Get start time
-    datetime GetStartTime() const {
-        return m_startTime;
+    // Helper to convert pips to points
+    double PipsToPoints(int pips) {
+        return pips * 10 * _Point;
     }
     
-    // Convert pips to price points based on symbol digits
-    double PipsToPoints(int pips) const {
-        double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-        if(_Digits == 5 || _Digits == 3)
-            return pips * 10 * point;
-        else
-            return pips * point;
+    // Get start time for history tracking
+    datetime GetStartTime() const {
+        return startTime;
     }
 };

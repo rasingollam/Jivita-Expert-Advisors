@@ -5,6 +5,7 @@
 //+------------------------------------------------------------------+
 #include <Trade/Trade.mqh>
 #include "Settings.mqh"
+#include "ATRIndicator.mqh"  // Add ATR indicator include
 
 //+------------------------------------------------------------------+
 //| Class to manage trading operations                               |
@@ -14,6 +15,7 @@ class TradeManager
 private:
     CTrade m_trade;
     EASettings* m_settings;
+    ATRIndicator* m_atrIndicator;  // Add reference to ATR indicator
     
     // Trading performance tracking
     double m_cumulativeProfit;
@@ -91,9 +93,10 @@ private:
     }
     
 public:
-    // Constructor with renamed parameter to avoid shadowing
-    TradeManager(EASettings* p_settings) {
+    // Constructor with ATR indicator parameter
+    TradeManager(EASettings* p_settings, ATRIndicator* p_atrIndicator) {
         m_settings = p_settings;
+        m_atrIndicator = p_atrIndicator;
         m_cumulativeProfit = 0;
         m_totalTrades = 0;
         m_lastDealTicket = 0;
@@ -186,7 +189,22 @@ public:
         
         // Calculate entry and SL/TP levels
         double entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-        double stopLossDistance = m_settings.PipsToPoints(m_settings.stopLossPips);
+        double stopLossDistance;
+        
+        // Use either ATR-based or fixed stop loss
+        if (m_settings.useAtrStopLoss) {
+            // Get current ATR value from the ATR indicator
+            double atrValue = m_atrIndicator.GetCurrentATR();
+            stopLossDistance = atrValue * m_settings.atrStopLossMultiplier;
+            Print("Using ATR-based stop loss: ATR = ", DoubleToString(atrValue, _Digits), 
+                  " × Multiplier ", DoubleToString(m_settings.atrStopLossMultiplier, 2), 
+                  " = ", DoubleToString(stopLossDistance, _Digits));
+        } else {
+            stopLossDistance = m_settings.PipsToPoints(m_settings.stopLossPips);
+            Print("Using fixed stop loss: ", m_settings.stopLossPips, " pips = ", 
+                  DoubleToString(stopLossDistance, _Digits));
+        }
+        
         double takeProfitDistance = stopLossDistance * m_settings.riskRewardRatio;
         
         double stopLossPrice = entryPrice - stopLossDistance;
@@ -232,7 +250,22 @@ public:
         
         // Calculate entry and SL/TP levels
         double entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-        double stopLossDistance = m_settings.PipsToPoints(m_settings.stopLossPips);
+        double stopLossDistance;
+        
+        // Use either ATR-based or fixed stop loss
+        if (m_settings.useAtrStopLoss) {
+            // Get current ATR value from the ATR indicator
+            double atrValue = m_atrIndicator.GetCurrentATR();
+            stopLossDistance = atrValue * m_settings.atrStopLossMultiplier;
+            Print("Using ATR-based stop loss: ATR = ", DoubleToString(atrValue, _Digits), 
+                  " × Multiplier ", DoubleToString(m_settings.atrStopLossMultiplier, 2), 
+                  " = ", DoubleToString(stopLossDistance, _Digits));
+        } else {
+            stopLossDistance = m_settings.PipsToPoints(m_settings.stopLossPips);
+            Print("Using fixed stop loss: ", m_settings.stopLossPips, " pips = ", 
+                  DoubleToString(stopLossDistance, _Digits));
+        }
+        
         double takeProfitDistance = stopLossDistance * m_settings.riskRewardRatio;
         
         double stopLossPrice = entryPrice + stopLossDistance;
