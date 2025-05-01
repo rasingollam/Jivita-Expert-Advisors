@@ -43,15 +43,15 @@ private:
     int m_currentPanelHeight;
     bool m_panelInitialized;
     
-    // Add minimized state tracking
+    // Minimized state tracking
     bool m_isPanelMinimized;
     int m_titleBarHeight;
     
-    // Panel position variables - added to fix compilation errors
+    // Panel position variables
     int m_panelX;
     int m_panelY;
     
-    // Add performance tracking variables
+    // Performance tracking variables
     datetime m_lastUpdateTime;
     bool m_needsFullRedraw;
     
@@ -182,27 +182,9 @@ private:
         }
     }
     
-    // Update panel height based on content
-    void UpdatePanelHeight(int contentHeight) {
-        // Make sure we're using a reasonable minimum height
-        int minHeight = PANEL_HEIGHT_INITIAL;
-        int newHeight = MathMax(contentHeight, minHeight);
-        
-        // Only update if height has changed
-        if(newHeight != m_currentPanelHeight) {
-            m_currentPanelHeight = newHeight;
-            
-            // Update the background rectangle (only if not minimized)
-            string objName = PANEL_NAME + "_BG";
-            if(ObjectFind(0, objName) >= 0 && !m_isPanelMinimized) {
-                ObjectSetInteger(0, objName, OBJPROP_YSIZE, m_currentPanelHeight);
-            }
-        }
-    }
-    
-    // Create the panel structure with optimized object creation
+    // Create the panel structure
     void CreatePanelStructure() {
-        // Start performance optimization - disable chart redraws during bulk creation
+        // Disable chart redraws during bulk creation
         ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, false);
         
         // Remove any existing panel
@@ -213,7 +195,7 @@ private:
         m_titleBarHeight = PANEL_PADDING * 2 + 25; // Height of title bar
         m_needsFullRedraw = true;
         
-        // Create main panel background - height will be updated later
+        // Create main panel background
         string objName = PANEL_NAME + "_BG";
         ObjectCreate(0, objName, OBJ_RECTANGLE_LABEL, 0, 0, 0);
         ObjectSetInteger(0, objName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
@@ -231,14 +213,12 @@ private:
         ObjectSetInteger(0, objName, OBJPROP_SELECTED, false);
         ObjectSetInteger(0, objName, OBJPROP_HIDDEN, true);
         ObjectSetInteger(0, objName, OBJPROP_ZORDER, 0);
-        
-        // Add to object list
         AddPanelObject(objName);
         
         // Add panel title
         CreatePanelLabel(PANEL_NAME + "_Title", PANEL_TITLE, m_panelX + PANEL_PADDING, m_panelY + PANEL_PADDING, 14, TITLE_COLOR, true);
         
-        // Add minimize button - positioned at right side of title bar
+        // Add minimize button
         string btnName = PANEL_NAME + "_MinimizeBtn";
         int btnSize = 16;
         int btnX = m_panelX + PANEL_WIDTH - PANEL_PADDING - btnSize;
@@ -281,12 +261,10 @@ private:
         
         // Re-enable chart object creation events
         ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
-        
-        // Force a single redraw at the end
         ChartRedraw();
     }
     
-    // Toggle panel minimized state with optimized rendering
+    // Toggle panel minimized state
     void ToggleMinimizedState() {
         m_isPanelMinimized = !m_isPanelMinimized;
         
@@ -296,16 +274,15 @@ private:
             ObjectSetString(0, btnName, OBJPROP_TEXT, m_isPanelMinimized ? "+" : "-");
         }
         
-        // Temporarily disable object create events for faster handling
         ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, false);
         
-        // Update panel height based on minimized state
+        // Update panel based on minimized state
         string objName = PANEL_NAME + "_BG";
         if(m_isPanelMinimized) {
             // Set panel to just show title bar
             ObjectSetInteger(0, objName, OBJPROP_YSIZE, m_titleBarHeight);
             
-            // Use a more efficient way to hide objects - hide all at once
+            // Hide all objects except title bar
             for(int i = 0; i < m_panelObjectCount; i++) {
                 string name = m_panelObjects[i];
                 
@@ -325,7 +302,7 @@ private:
             // Restore full panel height
             ObjectSetInteger(0, objName, OBJPROP_YSIZE, m_currentPanelHeight);
             
-            // Show all objects at once
+            // Show all objects
             for(int i = 0; i < m_panelObjectCount; i++) {
                 string name = m_panelObjects[i];
                 if(ObjectFind(0, name) >= 0) {
@@ -334,24 +311,20 @@ private:
             }
         }
         
-        // Re-enable object creation events
         ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
-        
-        // Force a single redraw
         ChartRedraw();
     }
     
-    // Update panel content with current information - optimized
+    // Update panel content with current information
     void UpdatePanelContent() {
         if (!m_panelInitialized) return;
         
-        // Skip frequent updates - limit to once per 250ms
+        // Throttle updates
         if(TimeCurrent() - m_lastUpdateTime < 0.25 && !m_needsFullRedraw) return;
         
         m_lastUpdateTime = TimeCurrent();
         m_needsFullRedraw = false;
         
-        // Temporarily disable object create events for faster handling
         ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, false);
         
         // Get current profits
@@ -391,48 +364,50 @@ private:
                        DoubleToString(totalProfit, 2) + " (" + DoubleToString(totalProfitPercentage, 2) + "%)", 
                        totalProfitColor);
         
-        // Update Win Rate with W/L counts
+        // Win Rate with W/L counts
         string winRateText = DoubleToString(winRate, 1) + "% (" + 
                             IntegerToString(winningTrades) + "W/" + 
                             IntegerToString(losingTrades) + "L)";
         UpdateInfoValue("Win Rate", winRateText, winRate >= 50 ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR);
         
-        // Update Profit Factor
+        // Profit Factor
         string pfText = DoubleToString(profitFactor, 2);
         UpdateInfoValue("Profit Factor", pfText, profitFactor >= 1.0 ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR);
                       
         UpdateInfoValue("Total Completed Trades", 
                        IntegerToString(m_tradeManager.GetTotalTrades()));
         
-        // Dynamically calculate panel height based on content
+        // Calculate panel height
         int contentEndY = m_panelY + PANEL_PADDING + 30;  // Start after title bar
-        
-        // Add height for Profit Information section (header + 6 items)
         contentEndY += SECTION_SPACING + 18 + 5;  // Header space
         contentEndY += 6 * (16 + LINE_SPACING);   // 6 items
+        contentEndY += PANEL_PADDING;  // Bottom padding
         
-        // Add bottom padding
-        contentEndY += PANEL_PADDING;
+        // Update panel height
+        int minHeight = PANEL_HEIGHT_INITIAL;
+        int newHeight = MathMax(contentEndY - m_panelY, minHeight);
         
-        // Update panel height with dynamically calculated height
-        UpdatePanelHeight(contentEndY - m_panelY);
+        if(newHeight != m_currentPanelHeight) {
+            m_currentPanelHeight = newHeight;
+            
+            string objName = PANEL_NAME + "_BG";
+            if(ObjectFind(0, objName) >= 0 && !m_isPanelMinimized) {
+                ObjectSetInteger(0, objName, OBJPROP_YSIZE, m_currentPanelHeight);
+            }
+        }
         
-        // Re-enable object creation events
         ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
-        
-        // Force a single redraw at the end instead of multiple redraws
         ChartRedraw();
     }
     
-    // Update all panel objects' positions when panel is moved - optimized
+    // Update panel position when moved
     void UpdatePanelPosition(int newX, int newY) {
         int deltaX = newX - m_panelX;
         int deltaY = newY - m_panelY;
         
-        // Disable object create events temporarily for better performance
         ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, false);
         
-        // Update all panel objects in a batch
+        // Update all panel objects
         for(int i = 0; i < m_panelObjectCount; i++) {
             string objName = m_panelObjects[i];
             if(ObjectFind(0, objName) >= 0) {
@@ -444,19 +419,15 @@ private:
             }
         }
         
-        // Update the panel position variables
         m_panelX = newX;
         m_panelY = newY;
         
-        // Re-enable object creation events
         ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
-        
-        // Force a single redraw
         ChartRedraw();
     }
     
 public:
-    // Constructor with renamed parameters to avoid shadowing
+    // Constructor
     UIManager(EASettings* p_settings, ATRIndicator* p_atrIndicator, SignalDetector* p_signalDetector, TradeManager* p_tradeManager) {
         m_settings = p_settings;
         m_atrIndicator = p_atrIndicator;
@@ -467,13 +438,11 @@ public:
         m_currentPanelHeight = PANEL_HEIGHT_INITIAL;
         m_panelInitialized = false;
         m_isPanelMinimized = false;
-        m_titleBarHeight = PANEL_PADDING * 2 + 25; // Height of title bar
+        m_titleBarHeight = PANEL_PADDING * 2 + 25;
         
-        // Initialize panel position
-        m_panelX = PANEL_X;  // Use the defined constant
-        m_panelY = PANEL_Y;  // Use the defined constant
+        m_panelX = PANEL_X;
+        m_panelY = PANEL_Y;
         
-        // Initialize performance tracking variables
         m_lastUpdateTime = 0;
         m_needsFullRedraw = true;
     }
@@ -483,7 +452,7 @@ public:
         Cleanup();
     }
     
-    // Initialize the UI with optimized object creation
+    // Initialize the UI
     bool Initialize() {
         if (m_settings == NULL || m_atrIndicator == NULL || 
             m_signalDetector == NULL || m_tradeManager == NULL) {
@@ -491,48 +460,37 @@ public:
             return false;
         }
         
-        // Don't create UI in optimization mode
         if (m_settings.isOptimization) return true;
         
-        // Pre-allocate object array to reduce reallocations
-        ArrayResize(m_panelObjects, 50);  // Reduced size since we have fewer objects
+        ArrayResize(m_panelObjects, 50);
         
-        // Create panel structure with optimized object handling
         CreatePanelStructure();
         m_panelInitialized = true;
         
         return true;
     }
     
-    // Clean up all UI elements
+    // Clean up UI elements
     void Cleanup() {
         if (m_panelInitialized) {
-            // Disable object create events temporarily for better performance during cleanup
             ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, false);
             
             RemoveAllPanelObjects();
             m_panelInitialized = false;
             
-            // Also ensure all drawings are removed
-            ObjectsDeleteAll(0, "ATRBand_");    // Remove all ATR band lines
-            ObjectsDeleteAll(0, "ATRSignal_");  // Remove all signal markers
+            ObjectsDeleteAll(0, "ATRBand_");
+            ObjectsDeleteAll(0, "ATRSignal_");
             
-            // Re-enable object creation events
             ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
             
-            // Clear chart comment
             Comment("");
-            
-            // Force chart redraw
             ChartRedraw();
         }
     }
     
-    // Handle chart events - need to add this to detect button clicks
+    // Handle chart events
     bool ProcessChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam) {
-        // Handle button clicks
         if(id == CHARTEVENT_OBJECT_CLICK) {
-            // Check if our minimize button was clicked
             if(sparam == PANEL_NAME + "_MinimizeBtn") {
                 ToggleMinimized();
                 return true;
@@ -542,26 +500,23 @@ public:
         return false;
     }
     
-    // Public method to toggle minimized state - can be called from OnChartEvent
+    // Toggle minimized state
     void ToggleMinimized() {
         ToggleMinimizedState();
     }
     
-    // Update the UI with throttling to prevent excessive updates
+    // Update the UI
     void Update() {
-        // Skip all UI operations in strategy tester
         if(MQLInfoInteger(MQL_TESTER) || m_settings.isOptimization) {
             return;
         }
         
-        // Make sure panel is initialized
         if(!m_panelInitialized) {
             CreatePanelStructure();
             m_panelInitialized = true;
             m_needsFullRedraw = true;
         }
         
-        // Update content - only if panel is not minimized and needs updating
         if(!m_isPanelMinimized) {
             UpdatePanelContent();
         }
