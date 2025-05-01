@@ -20,6 +20,12 @@ private:
     int m_totalTrades;
     ulong m_lastDealTicket;
     
+    // New tracking variables for winrate and profit factor
+    int m_winningTrades;
+    int m_losingTrades;
+    double m_totalProfits;
+    double m_totalLosses;
+    
     // Check if there are any open positions for the symbol
     bool HasOpenPositions() {
         for (int i = 0; i < PositionsTotal(); i++) {
@@ -92,6 +98,12 @@ public:
         m_totalTrades = 0;
         m_lastDealTicket = 0;
         
+        // Initialize new tracking variables
+        m_winningTrades = 0;
+        m_losingTrades = 0;
+        m_totalProfits = 0;
+        m_totalLosses = 0;
+        
         // Set Magic Number for trade object
         m_trade.SetExpertMagicNumber(m_settings.magicNumber);
         
@@ -110,6 +122,23 @@ public:
             if (GlobalVariableCheck(prefix + "LastDealTicket")) {
                 m_lastDealTicket = (ulong)GlobalVariableGet(prefix + "LastDealTicket");
             }
+            
+            // Load win/loss statistics
+            if (GlobalVariableCheck(prefix + "WinningTrades")) {
+                m_winningTrades = (int)GlobalVariableGet(prefix + "WinningTrades");
+            }
+            
+            if (GlobalVariableCheck(prefix + "LosingTrades")) {
+                m_losingTrades = (int)GlobalVariableGet(prefix + "LosingTrades");
+            }
+            
+            if (GlobalVariableCheck(prefix + "TotalProfits")) {
+                m_totalProfits = GlobalVariableGet(prefix + "TotalProfits");
+            }
+            
+            if (GlobalVariableCheck(prefix + "TotalLosses")) {
+                m_totalLosses = GlobalVariableGet(prefix + "TotalLosses");
+            }
         }
     }
     
@@ -121,6 +150,12 @@ public:
             GlobalVariableSet(prefix + "CumulativeProfit", m_cumulativeProfit);
             GlobalVariableSet(prefix + "TotalTrades", m_totalTrades);
             GlobalVariableSet(prefix + "LastDealTicket", (double)m_lastDealTicket);
+            
+            // Save win/loss statistics
+            GlobalVariableSet(prefix + "WinningTrades", m_winningTrades);
+            GlobalVariableSet(prefix + "LosingTrades", m_losingTrades);
+            GlobalVariableSet(prefix + "TotalProfits", m_totalProfits);
+            GlobalVariableSet(prefix + "TotalLosses", m_totalLosses);
         }
     }
     
@@ -342,6 +377,9 @@ public:
         ulong newLastDealTicket = m_lastDealTicket;
         double newProfit = 0.0;
         int newTrades = 0;
+        int newWins = 0;
+        double newProfits = 0.0;
+        double newLosses = 0.0;
         int totalDeals = HistoryDealsTotal();
         
         // First pass: calculate changes without updating state
@@ -361,6 +399,14 @@ public:
                 newProfit += profit;
                 newTrades++;
                 
+                // Track wins and losses for winrate calculation
+                if(profit >= 0) {
+                    newWins++;
+                    newProfits += profit;
+                } else {
+                    newLosses += MathAbs(profit);
+                }
+                
                 // Track highest ticket for next update
                 if(dealTicket > newLastDealTicket)
                     newLastDealTicket = dealTicket;
@@ -371,6 +417,10 @@ public:
         if(newTrades > 0) {
             m_cumulativeProfit += newProfit;
             m_totalTrades += newTrades;
+            m_winningTrades += newWins;
+            m_losingTrades += (newTrades - newWins);
+            m_totalProfits += newProfits;
+            m_totalLosses += newLosses;
             m_lastDealTicket = newLastDealTicket;
             
             // Log the update for debugging
@@ -406,5 +456,24 @@ public:
     // Get total trades count
     int GetTotalTrades() const {
         return m_totalTrades;
+    }
+    
+    // New methods to retrieve win rate and profit factor
+    double GetWinRate() const {
+        if(m_totalTrades <= 0) return 0;
+        return (double)m_winningTrades / m_totalTrades * 100.0;
+    }
+    
+    double GetProfitFactor() const {
+        if(m_totalLosses <= 0) return 0;
+        return m_totalProfits / m_totalLosses;
+    }
+    
+    int GetWinningTrades() const {
+        return m_winningTrades;
+    }
+    
+    int GetLosingTrades() const {
+        return m_losingTrades;
     }
 };

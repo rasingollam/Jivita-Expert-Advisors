@@ -277,6 +277,17 @@ private:
         
         // Create section headers and labels for all sections
         
+        // --- MOVED: Profit Information Section to top ---
+        CreateSectionHeaderStatic("Profit Information", y);
+        
+        // Create labels for profit information
+        CreateInfoLabelPair("Current Positions Profit", "0.00", y);
+        CreateInfoLabelPair("Cumulative Closed Profit", "0.00", y);
+        CreateInfoLabelPair("Total Profit", "0.00", y);
+        CreateInfoLabelPair("Win Rate", "0%", y);           // New Win Rate row
+        CreateInfoLabelPair("Profit Factor", "0.00", y);    // New Profit Factor row
+        CreateInfoLabelPair("Total Completed Trades", "0", y);
+        
         // --- ATR Information Section ---
         CreateSectionHeaderStatic("ATR Information", y);
         
@@ -308,15 +319,6 @@ private:
         CreateInfoLabelPair("Stop Loss", IntegerToString(m_settings.stopLossPips) + " pips", y);
         CreateInfoLabelPair("Risk/Reward", DoubleToString(m_settings.riskRewardRatio, 1), y);
         CreateInfoLabelPair("Take Profit", m_settings.useTakeProfit ? "Enabled" : "Disabled", y);
-        
-        // --- Profit Information Section ---
-        CreateSectionHeaderStatic("Profit Information", y);
-        
-        // Create labels for profit information
-        CreateInfoLabelPair("Current Positions Profit", "0.00", y);
-        CreateInfoLabelPair("Cumulative Closed Profit", "0.00", y);
-        CreateInfoLabelPair("Total Profit", "0.00", y);
-        CreateInfoLabelPair("Total Completed Trades", "0", y);
         
         // Re-enable chart object creation events
         ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
@@ -400,106 +402,9 @@ private:
     
     // Update position section display
     void UpdatePositionSection(int &y) {
-        // Clean up previous position section
-        ObjectsDeleteAll(0, PANEL_NAME + "_Open Positions");
-        ObjectsDeleteAll(0, PANEL_NAME + "_Pos");
-        
-        // Remove position-related objects from tracking
-        for (int i = 0; i < m_panelObjectCount; i++) {
-            if (StringFind(m_panelObjects[i], PANEL_NAME + "_Pos") >= 0 || 
-                StringFind(m_panelObjects[i], PANEL_NAME + "_Open Positions") >= 0 ||
-                StringFind(m_panelObjects[i], PANEL_NAME + "_Value_Pos") >= 0 ||
-                StringFind(m_panelObjects[i], PANEL_NAME + "_Label_Pos") >= 0) {
-                ObjectDelete(0, m_panelObjects[i]);
-                m_panelObjects[i] = "";  // Mark for cleanup
-            }
-        }
-        
-        // Remove empty entries from the object list
-        int newCount = 0;
-        for (int i = 0; i < m_panelObjectCount; i++) {
-            if (m_panelObjects[i] != "") {
-                if (i != newCount) {
-                    m_panelObjects[newCount] = m_panelObjects[i];
-                }
-                newCount++;
-            }
-        }
-        
-        // Update panel object count
-        if (newCount != m_panelObjectCount) {
-            m_panelObjectCount = newCount;
-            ArrayResize(m_panelObjects, m_panelObjectCount);
-        }
-        
-        // Count positions for this symbol and Magic Number
-        int openPositionsCount = 0;
-        for (int i = 0; i < PositionsTotal(); i++) {
-            ulong ticket = PositionGetTicket(i);
-            if (PositionSelectByTicket(ticket) && 
-                PositionGetString(POSITION_SYMBOL) == _Symbol && 
-                PositionGetInteger(POSITION_MAGIC) == m_settings.magicNumber) {
-                openPositionsCount++;
-            }
-        }
-        
-        // Create position section only if there are positions
-        if (openPositionsCount > 0) {
-            // Create section header
-            CreateSectionHeaderStatic("Open Positions", y);
-            
-            int posCount = 0;
-            for (int i = 0; i < PositionsTotal(); i++) {
-                ulong ticket = PositionGetTicket(i);
-                if (PositionSelectByTicket(ticket) && 
-                    PositionGetString(POSITION_SYMBOL) == _Symbol &&
-                    PositionGetInteger(POSITION_MAGIC) == m_settings.magicNumber) {
-                    
-                    string posType = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? "BUY" : "SELL";
-                    double posOpen = PositionGetDouble(POSITION_PRICE_OPEN);
-                    double posSL = PositionGetDouble(POSITION_SL);
-                    double posTP = PositionGetDouble(POSITION_TP);
-                    double posProfit = PositionGetDouble(POSITION_PROFIT);
-                    
-                    color posColor = (posType == "BUY") ? SIGNAL_BUY_COLOR : SIGNAL_SELL_COLOR;
-                    color profitColor = (posProfit >= 0) ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR;
-                    
-                    // Show position info
-                    string posTypeLabel = PANEL_NAME + "_Pos" + IntegerToString(posCount) + "_Type";
-                    ObjectCreate(0, posTypeLabel, OBJ_LABEL, 0, 0, 0);
-                    ObjectSetInteger(0, posTypeLabel, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-                    ObjectSetInteger(0, posTypeLabel, OBJPROP_XDISTANCE, m_panelX + PANEL_PADDING);
-                    ObjectSetInteger(0, posTypeLabel, OBJPROP_YDISTANCE, y);
-                    ObjectSetInteger(0, posTypeLabel, OBJPROP_COLOR, posColor);
-                    ObjectSetInteger(0, posTypeLabel, OBJPROP_FONTSIZE, 9);
-                    ObjectSetString(0, posTypeLabel, OBJPROP_FONT, "Arial");
-                    ObjectSetString(0, posTypeLabel, OBJPROP_TEXT, "#" + IntegerToString(ticket) + ": " + posType);
-                    ObjectSetInteger(0, posTypeLabel, OBJPROP_HIDDEN, true);
-                    AddPanelObject(posTypeLabel);
-                    y += 16;
-                    
-                    // Create position detail labels
-                    string entryLabel = "Pos" + IntegerToString(posCount) + "_Entry";
-                    string slLabel = "Pos" + IntegerToString(posCount) + "_SL";
-                    string tpLabel = "Pos" + IntegerToString(posCount) + "_TP";
-                    string profitLabel = "Pos" + IntegerToString(posCount) + "_Profit";
-                    
-                    CreateInfoLabelPair(entryLabel, DoubleToString(posOpen, 5), y);
-                    CreateInfoLabelPair(slLabel, DoubleToString(posSL, 5), y);
-                    CreateInfoLabelPair(tpLabel, DoubleToString(posTP, 5), y);
-                    CreateInfoLabelPair(profitLabel, DoubleToString(posProfit, 2), y);
-                    
-                    // Update text and colors
-                    UpdateInfoValue(entryLabel, DoubleToString(posOpen, 5));
-                    UpdateInfoValue(slLabel, DoubleToString(posSL, 5));
-                    UpdateInfoValue(tpLabel, DoubleToString(posTP, 5));
-                    UpdateInfoValue(profitLabel, DoubleToString(posProfit, 2), profitColor);
-                    
-                    y += 10; // Add extra space between positions
-                    posCount++;
-                }
-            }
-        }
+        // This function is now empty as we're removing the open positions section
+        // We're keeping the function as a stub to avoid changing function signatures
+        return; // Early return, don't create position section
     }
     
     // Update panel content with current information - optimized
@@ -527,6 +432,51 @@ private:
         double currentProfit = m_tradeManager.CalculateTotalProfit();
         double cumulativeProfit = m_tradeManager.GetCumulativeProfit();
         double totalProfit = currentProfit + cumulativeProfit;
+        
+        // Update Profit Information section (now at the top)
+        double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+        double currentProfitPercentage = 0;
+        double totalProfitPercentage = 0;
+        
+        // Get win rate and profit factor
+        double winRate = m_tradeManager.GetWinRate();
+        double profitFactor = m_tradeManager.GetProfitFactor();
+        int winningTrades = m_tradeManager.GetWinningTrades();
+        int losingTrades = m_tradeManager.GetLosingTrades();
+        
+        if (accountBalance > 0) {
+            currentProfitPercentage = (currentProfit / accountBalance) * 100.0;
+            totalProfitPercentage = (totalProfit / accountBalance) * 100.0;
+        }
+        
+        color currentProfitColor = (currentProfit >= 0) ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR;
+        color cumulativeProfitColor = (cumulativeProfit >= 0) ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR;
+        color totalProfitColor = (totalProfit >= 0) ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR;
+        
+        UpdateInfoValue("Current Positions Profit", 
+                      DoubleToString(currentProfit, 2) + " (" + DoubleToString(currentProfitPercentage, 2) + "%)", 
+                      currentProfitColor);
+                      
+        UpdateInfoValue("Cumulative Closed Profit", 
+                      DoubleToString(cumulativeProfit, 2), 
+                      cumulativeProfitColor);
+                      
+        UpdateInfoValue("Total Profit", 
+                      DoubleToString(totalProfit, 2) + " (" + DoubleToString(totalProfitPercentage, 2) + "%)", 
+                      totalProfitColor);
+        
+        // Update Win Rate with W/L counts
+        string winRateText = DoubleToString(winRate, 1) + "% (" + 
+                            IntegerToString(winningTrades) + "W/" + 
+                            IntegerToString(losingTrades) + "L)";
+        UpdateInfoValue("Win Rate", winRateText, winRate >= 50 ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR);
+        
+        // Update Profit Factor
+        string pfText = DoubleToString(profitFactor, 2);
+        UpdateInfoValue("Profit Factor", pfText, profitFactor >= 1.0 ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR);
+                      
+        UpdateInfoValue("Total Completed Trades", 
+                      IntegerToString(m_tradeManager.GetTotalTrades()));
         
         // Update ATR Information section
         UpdateInfoValue("Current ATR Value", DoubleToString(atrValue, 5));
@@ -571,66 +521,30 @@ private:
         }
         
         UpdateInfoValue("Trading Enabled", tradingStatus, tradingStatusColor);
+
+        // Dynamically calculate panel height based on content
+        int contentEndY = m_panelY + PANEL_PADDING + 30;  // Start after title bar
         
-        // Update Profit Information section
-        double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
-        double currentProfitPercentage = 0;
-        double totalProfitPercentage = 0;
+        // Add height for Profit Information section (header + 6 items) - Added 2 more rows
+        contentEndY += SECTION_SPACING + 18 + 5;  // Header space
+        contentEndY += 6 * (16 + LINE_SPACING);   // 6 items (now including Win Rate and Profit Factor)
         
-        if (accountBalance > 0) {
-            currentProfitPercentage = (currentProfit / accountBalance) * 100.0;
-            totalProfitPercentage = (totalProfit / accountBalance) * 100.0;
-        }
-        
-        color currentProfitColor = (currentProfit >= 0) ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR;
-        color cumulativeProfitColor = (cumulativeProfit >= 0) ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR;
-        color totalProfitColor = (totalProfit >= 0) ? PROFIT_POSITIVE_COLOR : PROFIT_NEGATIVE_COLOR;
-        
-        UpdateInfoValue("Current Positions Profit", 
-                      DoubleToString(currentProfit, 2) + " (" + DoubleToString(currentProfitPercentage, 2) + "%)", 
-                      currentProfitColor);
-                      
-        UpdateInfoValue("Cumulative Closed Profit", 
-                      DoubleToString(cumulativeProfit, 2), 
-                      cumulativeProfitColor);
-                      
-        UpdateInfoValue("Total Profit", 
-                      DoubleToString(totalProfit, 2) + " (" + DoubleToString(totalProfitPercentage, 2) + "%)", 
-                      totalProfitColor);
-                      
-        UpdateInfoValue("Total Completed Trades", 
-                      IntegerToString(m_tradeManager.GetTotalTrades()));
-                      
-        // Calculate where static content ends
-        int contentEndY = m_panelY + PANEL_PADDING + 30;  // Start after title
-        
-        // Skip through sections - this must match layout in CreatePanelStructure
-        // ATR Information Section (header + 5 items)
+        // Add height for ATR Information section (header + 5 items)
         contentEndY += SECTION_SPACING + 18 + 5;  // Header space
         contentEndY += 5 * (16 + LINE_SPACING);   // 5 items
         
-        // Signal Information Section (header + 2 items)
+        // Add height for Signal Information section (header + 2 items)
         contentEndY += SECTION_SPACING + 18 + 5;  // Header space
         contentEndY += 2 * (16 + LINE_SPACING);   // 2 items
         
-        // Trade Settings Section (header + 8 items)
+        // Add height for Trade Settings section (header + 8 items)
         contentEndY += SECTION_SPACING + 18 + 5;  // Header space
         contentEndY += 8 * (16 + LINE_SPACING);   // 8 items
         
-        // Profit Information Section (header + 4 items)
-        contentEndY += SECTION_SPACING + 18 + 5;  // Header space
-        contentEndY += 4 * (16 + LINE_SPACING);   // 4 items
+        // Add bottom padding
+        contentEndY += PANEL_PADDING;
         
-        // Add extra space before position section
-        contentEndY += 10;
-        
-        // Update position section
-        UpdatePositionSection(contentEndY);
-        
-        // Add padding at bottom
-        contentEndY += PANEL_PADDING * 2;
-        
-        // Update panel height
+        // Update panel height with dynamically calculated height
         UpdatePanelHeight(contentEndY - m_panelY);
         
         // Re-enable object creation events
