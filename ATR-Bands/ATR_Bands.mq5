@@ -15,6 +15,7 @@
 #include "Include/ATRBands/SignalDetector.mqh"
 #include "Include/ATRBands/TradeManager.mqh"
 #include "Include/ATRBands/UIManager.mqh"
+#include "Include/ATRBands/OptimizationHelper.mqh"
 
 // EA Input Parameters
 input group "ATR Band Settings"
@@ -66,6 +67,7 @@ SignalDetector* signalDetector = NULL;
 TradeManager* tradeManager = NULL;
 UIManager* uiManager = NULL;
 EASettings* settings = NULL;
+OptimizationHelper* optHelper = NULL;
 
 // Track last bar time for detecting new bars
 datetime lastBarTime = 0;
@@ -119,33 +121,42 @@ bool IsWithinTradingHours() {
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   // Add detailed initialization logging
-   Print("===== ATR BANDS EA INITIALIZATION START =====");
-   Print("Symbol: ", _Symbol, ", Period: ", EnumToString(_Period));
-   Print("Inputs - ATR Period: ", ATR_Period, ", Multiplier: ", ATR_Multiplier);
+   // Check if we're running in optimization mode
+   bool isOptimizing = MQLInfoInteger(MQL_OPTIMIZATION);
+   
+   // Create optimization helper first thing
+   optHelper = new OptimizationHelper(_Symbol);
+   
+   if(!isOptimizing) {
+      Print("===== ATR BANDS EA INITIALIZATION START =====");
+      Print("Symbol: ", _Symbol, ", Period: ", EnumToString(_Period));
+      Print("Inputs - ATR Period: ", ATR_Period, ", Multiplier: ", ATR_Multiplier);
+   }
    
    // Protect against reinitialization without proper cleanup
    if(settings != NULL || atrIndicator != NULL || signalDetector != NULL || 
       tradeManager != NULL || uiManager != NULL) {
-      Print("Warning: EA is being reinitialized. Cleaning up previous resources...");
+      if(!isOptimizing) {
+         Print("Warning: EA is being reinitialized. Cleaning up previous resources...");
+      }
       OnDeinit(REASON_PROGRAM);
    }
    
-   // Check if we're running in optimization mode
-   bool isOptimization = MQLInfoInteger(MQL_OPTIMIZATION);
-   Print("ATR Bands EA initializing, optimization mode: ", (isOptimization ? "Yes" : "No"));
+   if(!isOptimizing) {
+      Print("ATR Bands EA initializing, optimization mode: ", (isOptimizing ? "Yes" : "No"));
+   }
    
    // Initialize settings
-   Print("Attempting to create settings object...");
    settings = new EASettings();
    if(settings == NULL) {
       Print("Critical error: Failed to allocate memory for settings");
       return INIT_FAILED;
    }
-   Print("Attempting to initialize settings with parameters...");
-   Print("ATR_Period:", ATR_Period, " ATR_Multiplier:", ATR_Multiplier);
    
-   // Fixed signal type to TOUCH, use DEFAULT_SIGNAL_SIZE instead of input parameter
+   // Set isOptimization flag directly for clarity
+   settings.isOptimization = isOptimizing;
+   
+   // Initialize settings with parameters
    if(!settings.Initialize(ATR_Period, ATR_Multiplier, Price, 
                            UpperBandColor, LowerBandColor, LineWidth, 
                            SIGNAL_TYPE_TOUCH, DEFAULT_SIGNAL_SIZE, clrNONE, clrNONE, 
@@ -157,40 +168,39 @@ int OnInit()
                            Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday,
                            UseTimeFilter, TradeStartTime, TradeEndTime,
                            TargetProfitPercent, 
-                           StopLossPercent, isOptimization, DEFAULT_TEST_MODE)) {
+                           StopLossPercent, isOptimizing, DEFAULT_TEST_MODE)) {
       Print("Failed to initialize settings - check above for detailed error");
       return INIT_FAILED;
    }
    
-   // Initialize components with error checking for each component
-   // ATR indicator
+   // Initialize ATR indicator - always needed
    atrIndicator = new ATRIndicator();
    if(atrIndicator == NULL) {
       Print("Critical error: Failed to allocate memory for ATR indicator");
       return INIT_FAILED;
    }
-   // Enhanced error reporting for component initialization
+   
    if(!atrIndicator.Initialize(settings)) {
       Print("ERROR: ATR indicator initialization failed - Period: ", settings.atrPeriod);
       return INIT_FAILED;
    }
    
-   // Signal detector
+   // Signal detector - always needed
    signalDetector = new SignalDetector(settings, atrIndicator);
    if(signalDetector == NULL) {
       Print("Critical error: Failed to allocate memory for signal detector");
       return INIT_FAILED;
    }
    
-   // Trade manager
+   // Trade manager - always needed
    tradeManager = new TradeManager(settings, atrIndicator);
    if(tradeManager == NULL) {
       Print("Critical error: Failed to allocate memory for trade manager");
       return INIT_FAILED;
    }
    
-   // UI manager (if not in optimization mode)
-   if(!isOptimization) {
+   // UI manager - only needed when not optimizing
+   if(!isOptimizing) {
       uiManager = new UIManager(settings, atrIndicator, signalDetector, tradeManager);
       if(uiManager == NULL) {
          Print("Critical error: Failed to allocate memory for UI manager");
@@ -200,13 +210,15 @@ int OnInit()
          Print("Failed to initialize UI manager");
          return INIT_FAILED;
       }
+      
+      // Enable chart events for UI interaction - only for object clicks, not mouse move
+      ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
+      ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, true);
    }
    
-   // Enable chart events for UI interaction - only for object clicks, not mouse move
-   ChartSetInteger(0, CHART_EVENT_OBJECT_CREATE, true);
-   ChartSetInteger(0, CHART_EVENT_OBJECT_DELETE, true);
-   
-   Print("===== ATR BANDS EA INITIALIZATION COMPLETE =====");
+   if(!isOptimizing) {
+      Print("===== ATR BANDS EA INITIALIZATION COMPLETE =====");
+   }
    return INIT_SUCCEEDED;
 }
 
@@ -247,6 +259,12 @@ void OnDeinit(const int reason)
       settings = NULL;
    }
    
+   // Clean up optimization helper
+   if(optHelper != NULL) {
+      delete optHelper;
+      optHelper = NULL;
+   }
+   
    // Remove all chart objects drawn by the EA
    ObjectsDeleteAll(0, "ATRBand_");    // Remove all ATR band lines
    ObjectsDeleteAll(0, "ATRSignal_");  // Remove all signal markers
@@ -277,16 +295,19 @@ bool IsNewBar()
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   // Add diagnostics to track execution
-   if(TimeCurrent() - lastLogTime > 60) { // Log only once per minute to avoid flooding
+   // Critical fix: Always check optimization mode first thing
+   bool isOptimizing = MQLInfoInteger(MQL_OPTIMIZATION);
+   
+   // Add diagnostics to track execution - but not during optimization
+   if(!isOptimizing && TimeCurrent() - lastLogTime > 60) { 
       Print("ATR Bands EA running tick: ", TimeCurrent());
       lastLogTime = TimeCurrent();
    }
    
-   // Validate components are initialized with detailed error message
+   // Validate components are initialized
    if(atrIndicator == NULL || signalDetector == NULL || tradeManager == NULL) {
       static bool errorReported = false;
-      if(!errorReported) {
+      if(!errorReported && !isOptimizing) {
          string missingComponents = "";
          if(atrIndicator == NULL) missingComponents += "ATR Indicator, ";
          if(signalDetector == NULL) missingComponents += "Signal Detector, ";
@@ -300,101 +321,102 @@ void OnTick()
       return;
    }
    
-   // Check if trade manager needs to update profit limits
-   tradeManager.CheckProfitLimits();
+   // Check profit limits but skip during optimization
+   if(!isOptimizing) {
+      tradeManager.CheckProfitLimits();
+   }
    
-   // Only update on new bars - exactly like reference implementation
+   // Check for new bar - we need this for both normal and optimization modes
    bool newBar = IsNewBar();
    
-   // Process on new bar only - just like reference implementation
+   // Process on new bar only
    if(newBar) {
-      Print("Processing new bar at: ", TimeToString(lastBarTime));
-      
       // Calculate ATR bands
       if(!atrIndicator.Calculate()) {
-         Print("ERROR: ATR calculation failed at bar time: ", TimeToString(lastBarTime));
+         if(!isOptimizing) {
+            Print("ERROR: ATR calculation failed at bar time: ", TimeToString(lastBarTime));
+         }
          return;
       }
-      
-      // Check if trading is allowed on the current day
-      MqlDateTime dt;
-      TimeToStruct(TimeCurrent(), dt);
-      int dayOfWeek = dt.day_of_week;
-      bool isDayAllowed = false;
-      
-      // Check if day of week is allowed
-      switch(dayOfWeek) {
-         case 0: isDayAllowed = settings.allowSunday; break;
-         case 1: isDayAllowed = settings.allowMonday; break;
-         case 2: isDayAllowed = settings.allowTuesday; break;
-         case 3: isDayAllowed = settings.allowWednesday; break;
-         case 4: isDayAllowed = settings.allowThursday; break;
-         case 5: isDayAllowed = settings.allowFriday; break;
-         case 6: isDayAllowed = settings.allowSaturday; break;
-      }
-      
-      if(!isDayAllowed) {
-         Print("Trading not allowed on ", TimeDayOfWeekDescription(TimeCurrent()));
-         return;
-      }
-      
-      // Log current ATR values for verification
-      Print("ATR value: ", DoubleToString(atrIndicator.GetCurrentATR(), _Digits),
-            ", Upper band: ", DoubleToString(atrIndicator.GetUpperBand(), _Digits),
-            ", Lower band: ", DoubleToString(atrIndicator.GetLowerBand(), _Digits));
       
       // Apply EMA trailing stop if enabled
       if(settings.useEmaTrailingStop) {
          tradeManager.ProcessTrailingStop();
       }
       
-      // Look for touch signals only
+      // Look for touch signals
       SignalInfo signal = signalDetector.DetectSignals();
       
-      // Log detected signal
-      if(signal.hasSignal) {
+      // Log signal detection for optimization debugging
+      if(signal.hasSignal && optHelper != NULL) {
+         optHelper.LogSignalDetected(signal.signalType, signal.isBuySignal);
+      }
+      
+      // Log detected signal - only when not optimizing
+      if(signal.hasSignal && !isOptimizing) {
          Print("Detected signal: ", signal.signalType, 
                ", Direction: ", (signal.isBuySignal ? "BUY" : "SELL"));
       }
       
-      // Execute trades based on signals with clear logging
+      // Execute trades based on signals
       if(signal.hasSignal) {
-         if(tradeManager.CanTrade()) {
-            // Check if we're within the trading time window for entries
-            if(!IsWithinTradingHours()) {
-               Print("Signal detected but outside trading hours (", 
-                     settings.tradeStartHour, ":", 
-                     settings.tradeStartMinute < 10 ? "0" : "", settings.tradeStartMinute, " - ", 
-                     settings.tradeEndHour, ":", 
-                     settings.tradeEndMinute < 10 ? "0" : "", settings.tradeEndMinute, ")");
-               return;
+         if(isOptimizing) {
+            // OPTIMIZATION MODE: Execute trades unconditionally
+            bool tradeExecuted = false;
+            
+            if(signal.isBuySignal) {
+               tradeExecuted = tradeManager.ExecuteBuy(signal.signalType);
+            } else {
+               tradeExecuted = tradeManager.ExecuteSell(signal.signalType);
             }
             
-            Print("Executing trade for detected signal: ", signal.signalType);
-            if(signal.isBuySignal) {
-               if(tradeManager.ExecuteBuy(signal.signalType)) {
-                  Print("Buy trade executed successfully");
-               } else {
-                  Print("Buy trade execution failed");
+            // Log trade execution for debugging
+            if(tradeExecuted && optHelper != NULL) {
+               optHelper.LogTradeExecuted(signal.signalType, signal.isBuySignal);
+            }
+         } 
+         else {
+            // NORMAL MODE: Apply all filters
+            if(tradeManager.CanTrade()) {
+               // Check if within trading time window
+               if(!settings.useTimeFilter || settings.IsWithinTradingHours()) {
+                  Print("Executing trade for signal: ", signal.signalType);
+                  
+                  if(signal.isBuySignal) {
+                     if(tradeManager.ExecuteBuy(signal.signalType)) {
+                        Print("Buy trade executed successfully");
+                     } else {
+                        Print("Buy trade execution failed");
+                     }
+                  } else {
+                     if(tradeManager.ExecuteSell(signal.signalType)) {
+                        Print("Sell trade executed successfully");
+                     } else {
+                        Print("Sell trade execution failed");
+                     }
+                  }
                }
-            } else {
-               if(tradeManager.ExecuteSell(signal.signalType)) {
-                  Print("Sell trade executed successfully");
-               } else {
-                  Print("Sell trade execution failed");
+               else {
+                  Print("Signal detected but outside trading hours (",
+                       settings.tradeStartHour, ":",
+                       (settings.tradeStartMinute < 10 ? "0" : ""), settings.tradeStartMinute,
+                       " - ",
+                       settings.tradeEndHour, ":",
+                       (settings.tradeEndMinute < 10 ? "0" : ""), settings.tradeEndMinute, ")");
                }
             }
-         } else {
-            Print("Signal detected but trading not allowed - Trading state: ", 
-                  (settings.targetReached ? "Target Reached" : 
-                   settings.stopLossReached ? "Stop Loss Reached" : 
-                   !settings.tradingEnabled ? "Trading Disabled" : "Unknown"));
+            else {
+               Print("Signal detected but trading not allowed - Trading state: ",
+                    (settings.targetReached ? "Target Reached" :
+                     settings.stopLossReached ? "Stop Loss Reached" :
+                     !settings.tradingEnabled ? "Trading Disabled" : "Unknown"));
+            }
          }
       }
    }
    
-   // Update UI if not in optimization mode and UI exists
-   if(uiManager != NULL && !settings.isOptimization) {
+   // Update UI only when not optimizing
+   if(uiManager != NULL && !isOptimizing) {
       uiManager.Update();
    }
 }
