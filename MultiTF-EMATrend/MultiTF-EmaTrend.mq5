@@ -45,6 +45,9 @@ int dotHigherColorValue, dotLowerColorValue;
 int prevHigherTrend = -1;
 int prevLowerTrend = -1;
 
+// Track the last signal type that was plotted
+int lastPlottedSignalType = -1;  // -1 = none, 0 = buy, 1 = sell
+
 // Arrow counter for unique names
 int arrowCounter = 0;
 
@@ -64,8 +67,9 @@ int OnInit()
    // Initialize the bar detector
    newBarDetector.Reset();
    
-   // Reset arrow counter
+   // Reset arrow counter and signal tracking
    arrowCounter = 0;
+   lastPlottedSignalType = -1;
    
    Print("MultiTF-EmaTrend initialized successfully");
    return(INIT_SUCCEEDED);
@@ -84,6 +88,9 @@ void OnDeinit(const int reason)
    // Delete all arrows created by this EA
    ObjectsDeleteAll(0, "BuyArrow_");
    ObjectsDeleteAll(0, "SellArrow_");
+   
+   // Reset signal tracking
+   lastPlottedSignalType = -1;
    
    Print("MultiTF-EmaTrend deinitialized");
 }
@@ -173,25 +180,31 @@ void CheckTrendAlignmentAndDraw()
    // Check for bullish alignment (both trends are bullish/green)
    if(colorHigherValue == 1 && colorLowerValue == 1)
    {
-      // Only draw if we didn't have alignment before
-      if(prevHigherTrend != 1 || prevLowerTrend != 1)
+      // Only draw if we didn't have alignment before AND this is a new signal type
+      if((prevHigherTrend != 1 || prevLowerTrend != 1) && lastPlottedSignalType != 0)
       {
          // Draw buy arrow at previous candle's close
          string arrowName = "BuyArrow_" + IntegerToString(arrowCounter++);
          DrawBuySellArrow(arrowName, prevTime, prevClose, true, BuyArrowColor, ArrowSize);
          Print("Buy signal detected - both trends are bullish");
+         
+         // Update last plotted signal type
+         lastPlottedSignalType = 0;  // 0 = buy signal
       }
    }
    // Check for bearish alignment (both trends are bearish/red)
    else if(colorHigherValue == 2 && colorLowerValue == 2)
    {
-      // Only draw if we didn't have alignment before
-      if(prevHigherTrend != 2 || prevLowerTrend != 2)
+      // Only draw if we didn't have alignment before AND this is a new signal type
+      if((prevHigherTrend != 2 || prevLowerTrend != 2) && lastPlottedSignalType != 1)
       {
          // Draw sell arrow at previous candle's close
          string arrowName = "SellArrow_" + IntegerToString(arrowCounter++);
          DrawBuySellArrow(arrowName, prevTime, prevClose, false, SellArrowColor, ArrowSize);
          Print("Sell signal detected - both trends are bearish");
+         
+         // Update last plotted signal type
+         lastPlottedSignalType = 1;  // 1 = sell signal
       }
    }
    
