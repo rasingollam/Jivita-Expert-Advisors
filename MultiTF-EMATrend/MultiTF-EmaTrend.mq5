@@ -18,7 +18,7 @@ input ENUM_TIMEFRAMES     HigherTimeframe   = PERIOD_H4;  // Higher Timeframe
 input ENUM_TIMEFRAMES     LowerTimeframe    = PERIOD_H1;  // Lower Timeframe
 input int                 SlopeWindow       = 5;          // Slope Calculation Window
 input int                 AtrPeriod         = 14;         // ATR Period
-input double              AtrMultiplier     = 0.5;        // ATR Multiplier
+input double              AtrMultiplier     = 0.1;        // ATR Multiplier
 input bool                EnableComments    = true;       // Enable chart comments
 
 // Global variables
