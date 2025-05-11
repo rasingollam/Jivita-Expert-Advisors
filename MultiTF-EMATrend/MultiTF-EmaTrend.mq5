@@ -14,8 +14,8 @@
 input group                "==== EMA Trend Settings ===="
 input int                 EmaPeriodHigher   = 50;         // Higher TF EMA Period
 input int                 EmaPeriodLower    = 20;         // Lower TF EMA Period
-input ENUM_TIMEFRAMES     HigherTimeframe   = PERIOD_H4;  // Higher Timeframe
-input ENUM_TIMEFRAMES     LowerTimeframe    = PERIOD_H1;  // Lower Timeframe
+input ENUM_TIMEFRAMES     HigherTimeframe   = PERIOD_H1;  // Higher Timeframe
+input ENUM_TIMEFRAMES     LowerTimeframe    = PERIOD_M15;  // Lower Timeframe
 input int                 SlopeWindow       = 5;          // Slope Calculation Window
 input int                 AtrPeriod         = 14;         // ATR Period
 input double              AtrMultiplier     = 0.1;        // ATR Multiplier for threshold
@@ -26,7 +26,7 @@ input group                "==== Arrow Settings ===="
 input bool                DrawArrows        = true;       // Draw buy/sell arrows
 input color               BuyArrowColor     = clrLime;    // Buy arrow color
 input color               SellArrowColor    = clrRed;     // Sell arrow color
-input int                 ArrowSize         = 5;          // Arrow size
+input int                 ArrowSize         = 1;          // Arrow size
 input int                 ArrowOffset       = 10;         // Arrow offset in points
 
 // Global variables
@@ -166,7 +166,7 @@ void CheckTrendAlignmentAndDraw()
       return;
    }
    
-   // Get the previous candle close price (for arrow placement)
+   // Get previous candle close price for signal placement
    double prevClose = iClose(Symbol(), Period(), 1);
    datetime prevTime = iTime(Symbol(), Period(), 1);
    
@@ -176,9 +176,9 @@ void CheckTrendAlignmentAndDraw()
       // Only draw if we didn't have alignment before
       if(prevHigherTrend != 1 || prevLowerTrend != 1)
       {
-         // Draw buy arrow
+         // Draw buy arrow at previous candle's close
          string arrowName = "BuyArrow_" + IntegerToString(arrowCounter++);
-         DrawArrow(arrowName, prevTime, prevClose, 233, BuyArrowColor, ArrowSize, ArrowOffset);
+         DrawBuySellArrow(arrowName, prevTime, prevClose, true, BuyArrowColor, ArrowSize);
          Print("Buy signal detected - both trends are bullish");
       }
    }
@@ -188,9 +188,9 @@ void CheckTrendAlignmentAndDraw()
       // Only draw if we didn't have alignment before
       if(prevHigherTrend != 2 || prevLowerTrend != 2)
       {
-         // Draw sell arrow
+         // Draw sell arrow at previous candle's close
          string arrowName = "SellArrow_" + IntegerToString(arrowCounter++);
-         DrawArrow(arrowName, prevTime, prevClose, 234, SellArrowColor, ArrowSize, -ArrowOffset);
+         DrawBuySellArrow(arrowName, prevTime, prevClose, false, SellArrowColor, ArrowSize);
          Print("Sell signal detected - both trends are bearish");
       }
    }
@@ -201,32 +201,32 @@ void CheckTrendAlignmentAndDraw()
 }
 
 //+------------------------------------------------------------------+
-//| Draw an arrow on the chart                                       |
+//| Draw a buy/sell arrow on the chart                               |
 //+------------------------------------------------------------------+
-bool DrawArrow(const string name, datetime time, double price, 
-              int arrowCode, color arrowColor, int size, int verticalOffset = 0)
+bool DrawBuySellArrow(const string name, datetime time, double price, 
+                     bool isBuy, color arrowColor, int size)
 {
-   // Convert offset from points to price
-   double offset = verticalOffset * Point();
+   // Create arrow object - use OBJ_ARROW_BUY or OBJ_ARROW_SELL directly
+   ENUM_OBJECT arrowType = isBuy ? OBJ_ARROW_BUY : OBJ_ARROW_SELL;
    
-   // Create arrow object
-   if(!ObjectCreate(0, name, OBJ_ARROW, 0, time, price + offset))
+   if(!ObjectCreate(0, name, arrowType, 0, time, price))
    {
       Print("Failed to create arrow object: ", GetLastError());
       return false;
    }
    
    // Set arrow properties
-   ObjectSetInteger(0, name, OBJPROP_ARROWCODE, arrowCode);
    ObjectSetInteger(0, name, OBJPROP_COLOR, arrowColor);
-   ObjectSetInteger(0, name, OBJPROP_WIDTH, size);  // Use WIDTH instead of SIZE for thickness
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, size); 
    ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
    ObjectSetInteger(0, name, OBJPROP_BACK, false);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, name, OBJPROP_SELECTED, false);
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
    ObjectSetInteger(0, name, OBJPROP_ZORDER, 0);
-   ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_BOTTOM);
+   
+   // Set anchor point so arrows appear correctly at the close price
+   ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_CENTER);
    
    return true;
 }
