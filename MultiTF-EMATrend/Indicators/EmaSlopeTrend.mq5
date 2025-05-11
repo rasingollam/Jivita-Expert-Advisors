@@ -10,6 +10,9 @@
 #property indicator_buffers 8
 #property indicator_plots   4
 
+// Include the EmaSlopeTrend class
+#include <Jivita-Expert-Advisors\EmaSlopeTrend.mqh>
+
 // EMA + slope color lines
 #property indicator_type1   DRAW_COLOR_LINE
 #property indicator_color1  clrGray, clrGreen, clrRed
@@ -43,32 +46,27 @@ input double              AtrMultiplier     = 0.5;        // ATR Multiplier for 
 
 // Indicator buffers
 double emaHigher[];      // Higher TF EMA values
-double emaLower[];       // Lower TF EMA values
 double colorHigher[];    // Higher TF EMA color index
+double emaLower[];       // Lower TF EMA values
 double colorLower[];     // Lower TF EMA color index
 double dotHigher[];      // Dots for higher TF trend changes
-double dotLower[];       // Dots for lower TF trend changes
 double dotHigherColor[]; // Color index for higher TF dots
+double dotLower[];       // Dots for lower TF trend changes
 double dotLowerColor[];  // Color index for lower TF dots
 
-// Indicator handles
-int emaHigherHandle;
-int emaLowerHandle;
-int atrHandle;
+// EmaSlopeTrend object
+CEmaSlopeTrend emaSlopeTrend;
 
 //+------------------------------------------------------------------+
 //| Custom indicator initialization function                         |
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   // Create indicator handles
-   emaHigherHandle = iMA(NULL, HigherTimeframe, EmaPeriodHigher, 0, MODE_EMA, PRICE_CLOSE);
-   emaLowerHandle = iMA(NULL, LowerTimeframe, EmaPeriodLower, 0, MODE_EMA, PRICE_CLOSE);
-   atrHandle = iATR(NULL, 0, AtrPeriod);
-   
-   if(emaHigherHandle == INVALID_HANDLE || emaLowerHandle == INVALID_HANDLE || atrHandle == INVALID_HANDLE)
+   // Initialize the EmaSlopeTrend object
+   if(!emaSlopeTrend.Init(EmaPeriodHigher, EmaPeriodLower, HigherTimeframe, 
+                         LowerTimeframe, SlopeWindow, AtrPeriod, AtrMultiplier))
    {
-      Print("Error creating indicator handles");
+      Print("Error initializing EmaSlopeTrend object");
       return(INIT_FAILED);
    }
    
@@ -95,18 +93,11 @@ int OnInit()
    // Set indicator digits
    IndicatorSetInteger(INDICATOR_DIGITS, _Digits);
    
+   // Initialize buffers with empty values
+   ArrayInitialize(dotHigher, EMPTY_VALUE);
+   ArrayInitialize(dotLower, EMPTY_VALUE);
+   
    return(INIT_SUCCEEDED);
-}
-
-//+------------------------------------------------------------------+
-//| Custom indicator deinitialization function                       |
-//+------------------------------------------------------------------+
-void OnDeinit(const int reason)
-{
-   // Release indicator handles
-   IndicatorRelease(emaHigherHandle);
-   IndicatorRelease(emaLowerHandle);
-   IndicatorRelease(atrHandle);
 }
 
 //+------------------------------------------------------------------+
@@ -131,119 +122,44 @@ int OnCalculate(const int rates_total,
    int start = prev_calculated == 0 ? rates_total - minBars : prev_calculated - 1;
    if(start < 0) start = 0;
    
-   // Arrays to store temporary EMA values
-   double higherEmaBuffer[];
-   double lowerEmaBuffer[];
-   double atrBuffer[];
-   
-   // Resize arrays appropriately
-   ArraySetAsSeries(higherEmaBuffer, true);
-   ArraySetAsSeries(lowerEmaBuffer, true);
-   ArraySetAsSeries(atrBuffer, true);
-   
-   // Initialize dot buffers
-   ArrayInitialize(dotHigher, EMPTY_VALUE);
-   ArrayInitialize(dotLower, EMPTY_VALUE);
-   
-   // Previous trend states to detect changes
-   int prevTrendHigh = -99;
-   int prevTrendLow = -99;
-   
-   // Process all bars
+   // Process each bar
    for(int i=start; i<rates_total; i++)
    {
-      // Get higher timeframe EMA value
-      datetime currentTime = time[i];
-      int higherTFBar = iBarShift(NULL, HigherTimeframe, currentTime);
+      // Calculate trend values using the EmaSlopeTrend class
+      double tempEmaHigher, tempEmaLower;
+      int tempColorHigher, tempColorLower;
+      double tempDotHigher, tempDotLower;
+      int tempDotHigherColor, tempDotLowerColor;
       
-      if(higherTFBar >= 0)
+      if(emaSlopeTrend.Calculate(i, time[i], 
+                              tempEmaHigher, tempEmaLower, 
+                              tempColorHigher, tempColorLower, 
+                              tempDotHigher, tempDotLower,
+                              tempDotHigherColor, tempDotLowerColor))
       {
-         // Copy EMA data from higher timeframe
-         if(CopyBuffer(emaHigherHandle, 0, higherTFBar, 1, higherEmaBuffer) > 0)
-         {
-            emaHigher[i] = higherEmaBuffer[0];
-         }
-         else
-         {
-            emaHigher[i] = i > 0 ? emaHigher[i-1] : 0;
-         }
+         // Store values in indicator buffers
+         emaHigher[i] = tempEmaHigher;
+         emaLower[i] = tempEmaLower;
+         colorHigher[i] = tempColorHigher;
+         colorLower[i] = tempColorLower;
+         dotHigher[i] = tempDotHigher;
+         dotLower[i] = tempDotLower;
+         dotHigherColor[i] = tempDotHigherColor;
+         dotLowerColor[i] = tempDotLowerColor;
       }
       else
       {
-         emaHigher[i] = i > 0 ? emaHigher[i-1] : 0;
-      }
-      
-      // Get lower timeframe EMA value
-      int lowerTFBar = iBarShift(NULL, LowerTimeframe, currentTime);
-      
-      if(lowerTFBar >= 0)
-      {
-         // Copy EMA data from lower timeframe
-         if(CopyBuffer(emaLowerHandle, 0, lowerTFBar, 1, lowerEmaBuffer) > 0)
+         // Initialize with empty or previous values
+         if(i > 0)
          {
-            emaLower[i] = lowerEmaBuffer[0];
+            emaHigher[i] = emaHigher[i-1];
+            emaLower[i] = emaLower[i-1];
+            colorHigher[i] = colorHigher[i-1];
+            colorLower[i] = colorLower[i-1];
          }
-         else
-         {
-            emaLower[i] = i > 0 ? emaLower[i-1] : 0;
-         }
-      }
-      else
-      {
-         emaLower[i] = i > 0 ? emaLower[i-1] : 0;
-      }
-   }
-   
-   // Calculate slopes and set colors
-   for(int i=start; i<rates_total-SlopeWindow; i++)
-   {
-      // Calculate slopes using the window size
-      double slopeHigh = (emaHigher[i] - emaHigher[i + SlopeWindow]) / SlopeWindow;
-      double slopeLow = (emaLower[i] - emaLower[i + SlopeWindow]) / SlopeWindow;
-      
-      // Get ATR value for dynamic threshold
-      if(CopyBuffer(atrHandle, 0, i, 1, atrBuffer) <= 0) continue;
-      double atr = atrBuffer[0];
-      double threshold = atr * AtrMultiplier;
-      
-      // Determine trend direction based on slope and threshold
-      int trendHigh = 0; // Neutral (gray)
-      int trendLow = 0;  // Neutral (gray)
-      
-      if(slopeHigh > threshold) trendHigh = 1; // Uptrend (green)
-      else if(slopeHigh < -threshold) trendHigh = 2; // Downtrend (red)
-      
-      if(slopeLow > threshold) trendLow = 1; // Uptrend (green)
-      else if(slopeLow < -threshold) trendLow = 2; // Downtrend (red)
-      
-      // Store color indices
-      colorHigher[i] = trendHigh;
-      colorLower[i] = trendLow;
-      
-      // Place dots at trend change points (only if we have a previous valid state)
-      if(i > 0 && prevTrendHigh != -99 && trendHigh != prevTrendHigh)
-      {
-         dotHigher[i] = emaHigher[i];
-         dotHigherColor[i] = trendHigh; // Set color index based on new trend
-      }
-      else
-      {
          dotHigher[i] = EMPTY_VALUE;
-      }
-      
-      if(i > 0 && prevTrendLow != -99 && trendLow != prevTrendLow)
-      {
-         dotLower[i] = emaLower[i];
-         dotLowerColor[i] = trendLow; // Set color index based on new trend
-      }
-      else
-      {
          dotLower[i] = EMPTY_VALUE;
       }
-      
-      // Update previous trend states
-      prevTrendHigh = trendHigh;
-      prevTrendLow = trendLow;
    }
    
    // Return value of prev_calculated for next call
