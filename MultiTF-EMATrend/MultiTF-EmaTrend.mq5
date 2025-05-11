@@ -27,7 +27,6 @@ input bool                DrawArrows        = true;       // Draw buy/sell arrow
 input color               BuyArrowColor     = clrLime;    // Buy arrow color
 input color               SellArrowColor    = clrRed;     // Sell arrow color
 input int                 ArrowSize         = 1;          // Arrow size
-input int                 ArrowOffset       = 10;         // Arrow offset in points
 
 // Global variables
 CNewBarDetector newBarDetector;
@@ -40,16 +39,6 @@ double emaHigherValue, emaLowerValue;
 int colorHigherValue, colorLowerValue;
 double dotHigherValue, dotLowerValue;
 int dotHigherColorValue, dotLowerColorValue;
-
-// Previous trends for tracking changes
-int prevHigherTrend = -1;
-int prevLowerTrend = -1;
-
-// Track the last signal type that was plotted
-int lastPlottedSignalType = -1;  // -1 = none, 0 = buy, 1 = sell
-
-// Arrow counter for unique names
-int arrowCounter = 0;
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -64,12 +53,11 @@ int OnInit()
       return(INIT_FAILED);
    }
    
+   // Configure arrow settings
+   emaSlopeTrend.ConfigureArrows(DrawArrows, BuyArrowColor, SellArrowColor, ArrowSize);
+   
    // Initialize the bar detector
    newBarDetector.Reset();
-   
-   // Reset arrow counter and signal tracking
-   arrowCounter = 0;
-   lastPlottedSignalType = -1;
    
    Print("MultiTF-EmaTrend initialized successfully");
    return(INIT_SUCCEEDED);
@@ -80,17 +68,11 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-   // EmaSlopeTrend object will clean up in its destructor
+   // Clean up objects created by the EmaSlopeTrend class
+   emaSlopeTrend.CleanupObjects();
    
-   // Clear chart objects
+   // Clear chart comments
    Comment("");
-   
-   // Delete all arrows created by this EA
-   ObjectsDeleteAll(0, "BuyArrow_");
-   ObjectsDeleteAll(0, "SellArrow_");
-   
-   // Reset signal tracking
-   lastPlottedSignalType = -1;
    
    Print("MultiTF-EmaTrend deinitialized");
 }
@@ -120,8 +102,7 @@ void OnTick()
    }
    
    // Check for trend alignment and draw arrows if needed
-   if(DrawArrows)
-      CheckTrendAlignmentAndDraw();
+   emaSlopeTrend.CheckTrendAlignment();
    
    // Display info on the chart
    if(EnableComments)
@@ -158,88 +139,4 @@ void DisplayInfo()
    info += "\nEMA Lower: " + FormatPrice(emaLowerValue);
    
    Comment(info);
-}
-
-//+------------------------------------------------------------------+
-//| Check if trends are aligned and draw arrows                      |
-//+------------------------------------------------------------------+
-void CheckTrendAlignmentAndDraw()
-{
-   // Skip if we don't have previous values yet
-   if(prevHigherTrend == -1 || prevLowerTrend == -1)
-   {
-      prevHigherTrend = colorHigherValue;
-      prevLowerTrend = colorLowerValue;
-      return;
-   }
-   
-   // Get previous candle close price for signal placement
-   double prevClose = iClose(Symbol(), Period(), 1);
-   datetime prevTime = iTime(Symbol(), Period(), 1);
-   
-   // Check for bullish alignment (both trends are bullish/green)
-   if(colorHigherValue == 1 && colorLowerValue == 1)
-   {
-      // Only draw if we didn't have alignment before AND this is a new signal type
-      if((prevHigherTrend != 1 || prevLowerTrend != 1) && lastPlottedSignalType != 0)
-      {
-         // Draw buy arrow at previous candle's close
-         string arrowName = "BuyArrow_" + IntegerToString(arrowCounter++);
-         DrawBuySellArrow(arrowName, prevTime, prevClose, true, BuyArrowColor, ArrowSize);
-         Print("Buy signal detected - both trends are bullish");
-         
-         // Update last plotted signal type
-         lastPlottedSignalType = 0;  // 0 = buy signal
-      }
-   }
-   // Check for bearish alignment (both trends are bearish/red)
-   else if(colorHigherValue == 2 && colorLowerValue == 2)
-   {
-      // Only draw if we didn't have alignment before AND this is a new signal type
-      if((prevHigherTrend != 2 || prevLowerTrend != 2) && lastPlottedSignalType != 1)
-      {
-         // Draw sell arrow at previous candle's close
-         string arrowName = "SellArrow_" + IntegerToString(arrowCounter++);
-         DrawBuySellArrow(arrowName, prevTime, prevClose, false, SellArrowColor, ArrowSize);
-         Print("Sell signal detected - both trends are bearish");
-         
-         // Update last plotted signal type
-         lastPlottedSignalType = 1;  // 1 = sell signal
-      }
-   }
-   
-   // Update previous trend values
-   prevHigherTrend = colorHigherValue;
-   prevLowerTrend = colorLowerValue;
-}
-
-//+------------------------------------------------------------------+
-//| Draw a buy/sell arrow on the chart                               |
-//+------------------------------------------------------------------+
-bool DrawBuySellArrow(const string name, datetime time, double price, 
-                     bool isBuy, color arrowColor, int size)
-{
-   // Create arrow object - use OBJ_ARROW_BUY or OBJ_ARROW_SELL directly
-   ENUM_OBJECT arrowType = isBuy ? OBJ_ARROW_BUY : OBJ_ARROW_SELL;
-   
-   if(!ObjectCreate(0, name, arrowType, 0, time, price))
-   {
-      Print("Failed to create arrow object: ", GetLastError());
-      return false;
-   }
-   
-   // Set arrow properties
-   ObjectSetInteger(0, name, OBJPROP_COLOR, arrowColor);
-   ObjectSetInteger(0, name, OBJPROP_WIDTH, size); 
-   ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
-   ObjectSetInteger(0, name, OBJPROP_BACK, false);
-   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
-   ObjectSetInteger(0, name, OBJPROP_SELECTED, false);
-   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
-   ObjectSetInteger(0, name, OBJPROP_ZORDER, 0);
-   
-   // Set anchor point so arrows appear correctly at the close price
-   ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_CENTER);
-   
-   return true;
 }

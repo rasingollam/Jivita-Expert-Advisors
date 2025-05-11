@@ -32,11 +32,23 @@ private:
    int               m_prev_trend_high;
    int               m_prev_trend_low;
    
+   // Signal tracking
+   int               m_last_plotted_signal_type; // -1 = none, 0 = buy, 1 = sell
+   int               m_arrow_counter;
+   bool              m_draw_arrows;
+   color             m_buy_arrow_color;
+   color             m_sell_arrow_color;
+   int               m_arrow_size;
+   
    // Internal buffers
    double            m_higher_ema_buffer[];
    double            m_lower_ema_buffer[];
    double            m_atr_higher_buffer[];  // ATR buffer for higher timeframe
    double            m_atr_lower_buffer[];   // ATR buffer for lower timeframe
+   
+   // Draw an arrow on the chart
+   bool              DrawBuySellArrow(const string name, datetime time, double price, 
+                                    bool isBuy, color arrowColor, int size);
    
 public:
                      CEmaSlopeTrend();
@@ -47,12 +59,21 @@ public:
                         ENUM_TIMEFRAMES higher_timeframe, ENUM_TIMEFRAMES lower_timeframe,
                         int slope_window, int atr_period, double atr_multiplier);
    
+   // Configure arrow settings
+   void              ConfigureArrows(bool drawArrows, color buyColor, color sellColor, int arrowSize);
+   
    // Calculate trend values for specific bar
    bool              Calculate(int bar, datetime time,
                              double &ema_higher, double &ema_lower,
                              int &color_higher, int &color_lower,
                              double &dot_higher, double &dot_lower,
                              int &dot_higher_color, int &dot_lower_color);
+   
+   // Check for trend alignment and draw arrows if needed
+   void              CheckTrendAlignment();
+   
+   // Clean up any objects created by this class
+   void              CleanupObjects();
 };
 
 //+------------------------------------------------------------------+
@@ -75,6 +96,13 @@ CEmaSlopeTrend::CEmaSlopeTrend()
    
    m_prev_trend_high = -99;
    m_prev_trend_low = -99;
+   
+   m_last_plotted_signal_type = -1;
+   m_arrow_counter = 0;
+   m_draw_arrows = true;
+   m_buy_arrow_color = clrLime;
+   m_sell_arrow_color = clrRed;
+   m_arrow_size = 1;
    
    ArraySetAsSeries(m_higher_ema_buffer, true);
    ArraySetAsSeries(m_lower_ema_buffer, true);
@@ -134,6 +162,52 @@ bool CEmaSlopeTrend::Init(int ema_period_higher, int ema_period_lower,
    // Reset trend states
    m_prev_trend_high = -99;
    m_prev_trend_low = -99;
+   
+   // Reset signal tracking
+   m_last_plotted_signal_type = -1;
+   m_arrow_counter = 0;
+   
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Configure arrow settings                                         |
+//+------------------------------------------------------------------+
+void CEmaSlopeTrend::ConfigureArrows(bool drawArrows, color buyColor, color sellColor, int arrowSize)
+{
+   m_draw_arrows = drawArrows;
+   m_buy_arrow_color = buyColor;
+   m_sell_arrow_color = sellColor;
+   m_arrow_size = arrowSize;
+}
+
+//+------------------------------------------------------------------+
+//| Draw a buy/sell arrow on the chart                               |
+//+------------------------------------------------------------------+
+bool CEmaSlopeTrend::DrawBuySellArrow(const string name, datetime time, double price, 
+                     bool isBuy, color arrowColor, int size)
+{
+   // Create arrow object - use OBJ_ARROW_BUY or OBJ_ARROW_SELL directly
+   ENUM_OBJECT arrowType = isBuy ? OBJ_ARROW_BUY : OBJ_ARROW_SELL;
+   
+   if(!ObjectCreate(0, name, arrowType, 0, time, price))
+   {
+      Print("Failed to create arrow object: ", GetLastError());
+      return false;
+   }
+   
+   // Set arrow properties
+   ObjectSetInteger(0, name, OBJPROP_COLOR, arrowColor);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, size); 
+   ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+   ObjectSetInteger(0, name, OBJPROP_BACK, false);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_SELECTED, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+   ObjectSetInteger(0, name, OBJPROP_ZORDER, 0);
+   
+   // Set anchor point so arrows appear correctly at the close price
+   ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_CENTER);
    
    return true;
 }
@@ -239,4 +313,61 @@ bool CEmaSlopeTrend::Calculate(int bar, datetime time,
    m_prev_trend_low = trendLow;
    
    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Check for trend alignment and draw arrows                        |
+//+------------------------------------------------------------------+
+void CEmaSlopeTrend::CheckTrendAlignment()
+{
+   // Skip if arrow drawing is disabled
+   if(!m_draw_arrows) return;
+   
+   // Get previous candle close price for signal placement
+   double prevClose = iClose(Symbol(), PERIOD_CURRENT, 1);
+   datetime prevTime = iTime(Symbol(), PERIOD_CURRENT, 1);
+   
+   // Check for bullish alignment (both trends are bullish/green)
+   if(m_prev_trend_high == 1 && m_prev_trend_low == 1)
+   {
+      // Only draw if this is a new signal type
+      if(m_last_plotted_signal_type != 0)
+      {
+         // Draw buy arrow at previous candle's close
+         string arrowName = "BuyArrow_" + IntegerToString(m_arrow_counter++);
+         DrawBuySellArrow(arrowName, prevTime, prevClose, true, m_buy_arrow_color, m_arrow_size);
+         Print("Buy signal detected - both trends are bullish");
+         
+         // Update last plotted signal type
+         m_last_plotted_signal_type = 0;  // 0 = buy signal
+      }
+   }
+   // Check for bearish alignment (both trends are bearish/red)
+   else if(m_prev_trend_high == 2 && m_prev_trend_low == 2)
+   {
+      // Only draw if this is a new signal type
+      if(m_last_plotted_signal_type != 1)
+      {
+         // Draw sell arrow at previous candle's close
+         string arrowName = "SellArrow_" + IntegerToString(m_arrow_counter++);
+         DrawBuySellArrow(arrowName, prevTime, prevClose, false, m_sell_arrow_color, m_arrow_size);
+         Print("Sell signal detected - both trends are bearish");
+         
+         // Update last plotted signal type
+         m_last_plotted_signal_type = 1;  // 1 = sell signal
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Clean up any objects created by this class                       |
+//+------------------------------------------------------------------+
+void CEmaSlopeTrend::CleanupObjects()
+{
+   // Delete all arrows created by this class
+   ObjectsDeleteAll(0, "BuyArrow_");
+   ObjectsDeleteAll(0, "SellArrow_");
+   
+   // Reset signal tracking
+   m_last_plotted_signal_type = -1;
 }
