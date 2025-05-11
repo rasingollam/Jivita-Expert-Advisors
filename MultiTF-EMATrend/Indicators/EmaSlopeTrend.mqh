@@ -25,7 +25,8 @@ private:
    // Indicator handles
    int               m_ema_higher_handle;
    int               m_ema_lower_handle;
-   int               m_atr_handle;
+   int               m_atr_higher_handle;  // Separate ATR handle for higher timeframe
+   int               m_atr_lower_handle;   // Separate ATR handle for lower timeframe
    
    // Previous trend states
    int               m_prev_trend_high;
@@ -34,7 +35,8 @@ private:
    // Internal buffers
    double            m_higher_ema_buffer[];
    double            m_lower_ema_buffer[];
-   double            m_atr_buffer[];
+   double            m_atr_higher_buffer[];  // ATR buffer for higher timeframe
+   double            m_atr_lower_buffer[];   // ATR buffer for lower timeframe
    
 public:
                      CEmaSlopeTrend();
@@ -68,14 +70,16 @@ CEmaSlopeTrend::CEmaSlopeTrend()
    
    m_ema_higher_handle = INVALID_HANDLE;
    m_ema_lower_handle = INVALID_HANDLE;
-   m_atr_handle = INVALID_HANDLE;
+   m_atr_higher_handle = INVALID_HANDLE;
+   m_atr_lower_handle = INVALID_HANDLE;
    
    m_prev_trend_high = -99;
    m_prev_trend_low = -99;
    
    ArraySetAsSeries(m_higher_ema_buffer, true);
    ArraySetAsSeries(m_lower_ema_buffer, true);
-   ArraySetAsSeries(m_atr_buffer, true);
+   ArraySetAsSeries(m_atr_higher_buffer, true);
+   ArraySetAsSeries(m_atr_lower_buffer, true);
 }
 
 //+------------------------------------------------------------------+
@@ -90,8 +94,11 @@ CEmaSlopeTrend::~CEmaSlopeTrend()
    if(m_ema_lower_handle != INVALID_HANDLE)
       IndicatorRelease(m_ema_lower_handle);
       
-   if(m_atr_handle != INVALID_HANDLE)
-      IndicatorRelease(m_atr_handle);
+   if(m_atr_higher_handle != INVALID_HANDLE)
+      IndicatorRelease(m_atr_higher_handle);
+      
+   if(m_atr_lower_handle != INVALID_HANDLE)
+      IndicatorRelease(m_atr_lower_handle);
 }
 
 //+------------------------------------------------------------------+
@@ -113,10 +120,12 @@ bool CEmaSlopeTrend::Init(int ema_period_higher, int ema_period_lower,
    // Create indicator handles
    m_ema_higher_handle = iMA(Symbol(), m_higher_timeframe, m_ema_period_higher, 0, MODE_EMA, PRICE_CLOSE);
    m_ema_lower_handle = iMA(Symbol(), m_lower_timeframe, m_ema_period_lower, 0, MODE_EMA, PRICE_CLOSE);
-   m_atr_handle = iATR(Symbol(), 0, m_atr_period);
+   m_atr_higher_handle = iATR(Symbol(), m_higher_timeframe, m_atr_period);  // ATR for higher timeframe
+   m_atr_lower_handle = iATR(Symbol(), m_lower_timeframe, m_atr_period);    // ATR for lower timeframe
    
    // Verify handles
-   if(m_ema_higher_handle == INVALID_HANDLE || m_ema_lower_handle == INVALID_HANDLE || m_atr_handle == INVALID_HANDLE)
+   if(m_ema_higher_handle == INVALID_HANDLE || m_ema_lower_handle == INVALID_HANDLE || 
+      m_atr_higher_handle == INVALID_HANDLE || m_atr_lower_handle == INVALID_HANDLE)
    {
       Print("Error creating indicator handles in EmaSlopeTrend");
       return false;
@@ -180,22 +189,33 @@ bool CEmaSlopeTrend::Calculate(int bar, datetime time,
    double slopeHigh = (higherSlopeBuffer[0] - higherSlopeBuffer[m_slope_window]) / m_slope_window;
    double slopeLow = (lowerSlopeBuffer[0] - lowerSlopeBuffer[m_slope_window]) / m_slope_window;
    
-   // Get ATR for dynamic threshold
-   if(CopyBuffer(m_atr_handle, 0, bar, 1, m_atr_buffer) <= 0)
+   // Get ATR for each timeframe separately
+   if(CopyBuffer(m_atr_higher_handle, 0, higherTFBar, 1, m_atr_higher_buffer) <= 0)
       return false;
       
-   double atr = m_atr_buffer[0];
-   double threshold = atr * m_atr_multiplier;
+   if(CopyBuffer(m_atr_lower_handle, 0, lowerTFBar, 1, m_atr_lower_buffer) <= 0)
+      return false;
+      
+   double atrHigher = m_atr_higher_buffer[0];
+   double atrLower = m_atr_lower_buffer[0];
    
-   // Determine trend directions
+   // Calculate separate thresholds for each timeframe
+   double thresholdHigher = atrHigher * m_atr_multiplier;
+   double thresholdLower = atrLower * m_atr_multiplier;
+   
+   // Debug output
+   Print("Higher TF ATR: ", atrHigher, ", Threshold: ", thresholdHigher, ", Slope: ", slopeHigh);
+   Print("Lower TF ATR: ", atrLower, ", Threshold: ", thresholdLower, ", Slope: ", slopeLow);
+   
+   // Determine trend directions using appropriate thresholds
    int trendHigh = 0; // Neutral (gray)
    int trendLow = 0;  // Neutral (gray)
    
-   if(slopeHigh > threshold) trendHigh = 1; // Uptrend (green)
-   else if(slopeHigh < -threshold) trendHigh = 2; // Downtrend (red)
+   if(slopeHigh > thresholdHigher) trendHigh = 1; // Uptrend (green)
+   else if(slopeHigh < -thresholdHigher) trendHigh = 2; // Downtrend (red)
    
-   if(slopeLow > threshold) trendLow = 1; // Uptrend (green)
-   else if(slopeLow < -threshold) trendLow = 2; // Downtrend (red)
+   if(slopeLow > thresholdLower) trendLow = 1; // Uptrend (green)
+   else if(slopeLow < -thresholdLower) trendLow = 2; // Downtrend (red)
    
    // Store color indices
    color_higher = trendHigh;
