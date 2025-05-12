@@ -38,6 +38,7 @@ input bool                UseStopLoss        = true;      // Use ATR-based Stop 
 input double              SlAtrMultiplier    = 2.0;       // ATR multiplier for Stop Loss
 input double              RiskRewardRatio    = 1.0;       // Risk-to-Reward ratio for Take Profit
 input int                 RiskAtrPeriod      = 14;        // ATR period for risk calculation
+input bool                EnableTrailingStop = true;      // Enable trailing stop functionality
 input bool                ShowTrailingStop   = true;      // Show trailing stop trendline
 
 // Global variables
@@ -77,8 +78,8 @@ int OnInit()
    // Configure risk management
    tradeManager.ConfigureRiskManagement(UseStopLoss, SlAtrMultiplier, RiskRewardRatio, RiskAtrPeriod);
    
-   // Configure trailing stop visualization
-   tradeManager.ConfigureTrailingStopVisual(ShowTrailingStop);
+   // Configure trailing stop
+   tradeManager.ConfigureTrailingStop(EnableTrailingStop, ShowTrailingStop);
    
    // Initialize the bar detector
    newBarDetector.Reset();

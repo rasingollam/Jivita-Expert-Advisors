@@ -32,9 +32,12 @@ private:
    bool              m_is_long;
    int               m_last_processed_signal; // -1 = none, 0 = buy, 1 = sell
    
+   // Trailing stop settings
+   bool              m_enable_trailing_stop;  // Whether to use trailing stop functionality
+   bool              m_show_trailing_stop;    // Whether to show trailing stop visualization
+   
    // Trailing stop visualization
    string            m_trendline_name;
-   bool              m_show_trailing_stop;
    datetime          m_line_start_time;
    datetime          m_line_end_time;
    double            m_current_stop_level;  // Track the current stop level
@@ -51,6 +54,9 @@ private:
    void              UpdateTrailingStopLine();
    void              RemoveTrailingStopLine();
    
+   // Check if price has crossed the trailing stop line
+   bool              CheckStopLevelCrossed();
+   
 public:
                      CTradeManager();
                      ~CTradeManager();
@@ -61,8 +67,11 @@ public:
    // Configure stop loss and take profit settings
    void              ConfigureRiskManagement(bool useSl, double slAtrMulti, double riskReward, int atrPeriod);
    
-   // Configure trailing stop visualization
-   void              ConfigureTrailingStopVisual(bool showLine);
+   // Configure trailing stop settings
+   void              ConfigureTrailingStop(bool enableTrailing, bool showVisual);
+   
+   // Previous method now renamed for clarity
+   void              ConfigureTrailingStopVisual(bool showLine) { m_show_trailing_stop = showLine; }
    
    // Process trading signals
    void              ProcessSignal(int signalType);
@@ -100,9 +109,12 @@ CTradeManager::CTradeManager()
    m_is_long = false;
    m_last_processed_signal = -1;
    
+   // Initialize trailing stop settings
+   m_enable_trailing_stop = true;
+   m_show_trailing_stop = true;
+   
    // Initialize trailing stop visualization
    m_trendline_name = "TrailingStopLine";
-   m_show_trailing_stop = true;
    m_line_start_time = 0;
    m_line_end_time = 0;
    m_current_stop_level = 0;
@@ -169,11 +181,12 @@ void CTradeManager::ConfigureRiskManagement(bool useSl, double slAtrMulti, doubl
 }
 
 //+------------------------------------------------------------------+
-//| Configure trailing stop visualization                            |
+//| Configure trailing stop settings                                 |
 //+------------------------------------------------------------------+
-void CTradeManager::ConfigureTrailingStopVisual(bool showLine)
+void CTradeManager::ConfigureTrailingStop(bool enableTrailing, bool showVisual)
 {
-   m_show_trailing_stop = showLine;
+   m_enable_trailing_stop = enableTrailing;
+   m_show_trailing_stop = showVisual;
    
    // If visualization is turned off, remove existing line
    if(!m_show_trailing_stop)
@@ -404,6 +417,8 @@ bool CTradeManager::OpenPosition(bool isBuy)
       // Initialize m_current_stop_level with the initial stop loss
       m_current_stop_level = stopLoss;
       
+      Print("Initial trailing stop level set to: ", m_current_stop_level);
+      
       UpdateTrailingStopLine();
    }
    
@@ -459,24 +474,32 @@ void CTradeManager::UpdateTrailingStopLine()
    double current_price = m_is_long ? SymbolInfoDouble(Symbol(), SYMBOL_BID) : SymbolInfoDouble(Symbol(), SYMBOL_ASK);
    double new_stop_level = CalculateStopLoss(m_is_long, current_price);
    
-   // Apply trailing stop logic - only move in favorable direction
-   if(m_is_long)
+   // Apply trailing stop logic - only if trailing is enabled
+   if(m_enable_trailing_stop)
    {
-      // For buy (long) positions, only move stop loss up
-      if(new_stop_level > m_current_stop_level)
+      if(m_is_long)
       {
-         m_current_stop_level = new_stop_level;
-         Print("Trailing stop for BUY position moved UP to: ", m_current_stop_level);
+         // For buy (long) positions, only move stop loss up
+         if(new_stop_level > m_current_stop_level)
+         {
+            m_current_stop_level = new_stop_level;
+            Print("Trailing stop for BUY position moved UP to: ", m_current_stop_level);
+         }
+      }
+      else
+      {
+         // For sell (short) positions, only move stop loss down
+         if(new_stop_level < m_current_stop_level)
+         {
+            m_current_stop_level = new_stop_level;
+            Print("Trailing stop for SELL position moved DOWN to: ", m_current_stop_level);
+         }
       }
    }
    else
    {
-      // For sell (short) positions, only move stop loss down
-      if(new_stop_level < m_current_stop_level)
-      {
-         m_current_stop_level = new_stop_level;
-         Print("Trailing stop for SELL position moved DOWN to: ", m_current_stop_level);
-      }
+      // If trailing is disabled, always use the current calculated level
+      m_current_stop_level = new_stop_level;
    }
    
    // Update the end time to keep extending into the future
@@ -522,6 +545,34 @@ void CTradeManager::RemoveTrailingStopLine()
 }
 
 //+------------------------------------------------------------------+
+//| Check if price has closed beyond the trailing stop               |
+//+------------------------------------------------------------------+
+bool CTradeManager::CheckStopLevelCrossed()
+{
+   if(!m_has_position || m_current_stop_level == 0)
+      return false;
+      
+   // Get the previous bar's close price (bar 1)
+   double prevClose = iClose(Symbol(), PERIOD_CURRENT, 1);
+   
+   // Check if the close price has crossed our trailing stop level
+   if(m_is_long && prevClose < m_current_stop_level)
+   {
+      Print("BUY position stop triggered: Close price (", prevClose, 
+            ") is below trailing stop (", m_current_stop_level, ")");
+      return true;
+   }
+   else if(!m_is_long && prevClose > m_current_stop_level)
+   {
+      Print("SELL position stop triggered: Close price (", prevClose, 
+            ") is above trailing stop (", m_current_stop_level, ")");
+      return true;
+   }
+   
+   return false;
+}
+
+//+------------------------------------------------------------------+
 //| Method to notify trade manager of a new bar                      |
 //+------------------------------------------------------------------+
 void CTradeManager::OnNewBar()
@@ -533,10 +584,18 @@ void CTradeManager::OnNewBar()
    {
       m_last_bar_time = current_time;
       
-      // Update position info and trailing stop if needed
+      // Update position info
       GetPositionInfo();
       
-      if(m_has_position && m_show_trailing_stop)
+      // Check if we need to close the position due to trailing stop
+      if(m_has_position && m_enable_trailing_stop && m_current_stop_level != 0 && CheckStopLevelCrossed())
+      {
+         Print("Trailing stop level crossed - closing position");
+         CloseAllPositions();
+      }
+      
+      // Update trailing stop if we still have a position
+      if(m_has_position && (m_enable_trailing_stop || m_show_trailing_stop))
       {
          UpdateTrailingStopLine();
       }
