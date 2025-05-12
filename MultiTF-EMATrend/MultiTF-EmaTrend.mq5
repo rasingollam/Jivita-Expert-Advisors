@@ -19,7 +19,6 @@ input ENUM_TIMEFRAMES     LowerTimeframe    = PERIOD_M15;  // Lower Timeframe
 input int                 SlopeWindow       = 5;          // Slope Calculation Window
 input int                 AtrPeriod         = 14;         // ATR Period
 input double              AtrMultiplier     = 0.1;        // ATR Multiplier for threshold
-input bool                EnableDebugInfo   = true;       // Show debug info in Experts tab
 input bool                EnableComments    = true;       // Enable chart comments
 
 input group                "==== Arrow Settings ===="
