@@ -27,9 +27,10 @@ private:
    int               m_atr_period;
    int               m_atr_handle;
    
-   // Position tracking
+   // Position and signal tracking
    bool              m_has_position;
    bool              m_is_long;
+   int               m_last_processed_signal; // -1 = none, 0 = buy, 1 = sell
    
    // Get current position info for this EA
    bool              GetPositionInfo();
@@ -76,6 +77,7 @@ CTradeManager::CTradeManager()
    
    m_has_position = false;
    m_is_long = false;
+   m_last_processed_signal = -1;
 }
 
 //+------------------------------------------------------------------+
@@ -103,6 +105,9 @@ void CTradeManager::Init(int magic, bool enabled, double lots)
    
    // Check if we already have a position (in case of EA restart)
    GetPositionInfo();
+   
+   // Reset signal tracking
+   m_last_processed_signal = -1;
 }
 
 //+------------------------------------------------------------------+
@@ -235,6 +240,13 @@ void CTradeManager::ProcessSignal(int signalType)
    // Skip if trading is disabled
    if(!m_trading_enabled) return;
    
+   // Skip if the signal is the same as the last processed signal
+   if(signalType == m_last_processed_signal)
+   {
+      // Print("Signal type " + IntegerToString(signalType) + " already processed, skipping");
+      return;
+   }
+   
    // Check current position status
    GetPositionInfo();
    
@@ -261,8 +273,12 @@ void CTradeManager::ProcessSignal(int signalType)
    // Open a new position if we don't have one or closed the opposite one
    if(!m_has_position)
    {
+      Print("Opening new position for signal: ", (isBuySignal ? "BUY" : "SELL"));
       OpenPosition(isBuySignal);
    }
+   
+   // Update the last processed signal
+   m_last_processed_signal = signalType;
 }
 
 //+------------------------------------------------------------------+
