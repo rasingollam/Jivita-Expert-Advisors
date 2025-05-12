@@ -38,6 +38,7 @@ input bool                UseStopLoss        = true;      // Use ATR-based Stop 
 input double              SlAtrMultiplier    = 2.0;       // ATR multiplier for Stop Loss
 input double              RiskRewardRatio    = 1.0;       // Risk-to-Reward ratio for Take Profit
 input int                 RiskAtrPeriod      = 14;        // ATR period for risk calculation
+input bool                ShowTrailingStop   = true;      // Show trailing stop trendline
 
 // Global variables
 CNewBarDetector newBarDetector;
@@ -76,6 +77,9 @@ int OnInit()
    // Configure risk management
    tradeManager.ConfigureRiskManagement(UseStopLoss, SlAtrMultiplier, RiskRewardRatio, RiskAtrPeriod);
    
+   // Configure trailing stop visualization
+   tradeManager.ConfigureTrailingStopVisual(ShowTrailingStop);
+   
    // Initialize the bar detector
    newBarDetector.Reset();
    
@@ -111,6 +115,9 @@ void OnEmaTrendSignal(int signalType)
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   // Update the trade manager's position tracking (but not trailing stop)
+   tradeManager.OnTick();
+   
    // Check for a new bar using our utility
    if(!newBarDetector.IsNewBar())
       return;
@@ -118,6 +125,9 @@ void OnTick()
    // We need at least a few bars to analyze trends
    if(newBarDetector.GetBarCount() < 5)
       return;
+   
+   // Notify trade manager of new bar for trailing stop update
+   tradeManager.OnNewBar();
    
    // Calculate current values using the EmaSlopeTrend class
    if(!emaSlopeTrend.Calculate(0, TimeCurrent(),
