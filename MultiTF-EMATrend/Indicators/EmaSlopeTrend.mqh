@@ -74,6 +74,9 @@ public:
    
    // Clean up any objects created by this class
    void              CleanupObjects();
+   
+   // Get the last signal type (-1 = none, 0 = buy, 1 = sell)
+   int               GetLastSignalType() { return m_last_plotted_signal_type; }
 };
 
 //+------------------------------------------------------------------+
@@ -323,6 +326,9 @@ void CEmaSlopeTrend::CheckTrendAlignment()
    // Skip if arrow drawing is disabled
    if(!m_draw_arrows) return;
    
+   bool signalGenerated = false;  // Track if we generated a new signal
+   int previousSignal = m_last_plotted_signal_type;  // Store previous signal
+   
    // Get previous candle close price for signal placement
    double prevClose = iClose(Symbol(), PERIOD_CURRENT, 1);
    datetime prevTime = iTime(Symbol(), PERIOD_CURRENT, 1);
@@ -340,6 +346,7 @@ void CEmaSlopeTrend::CheckTrendAlignment()
          
          // Update last plotted signal type
          m_last_plotted_signal_type = 0;  // 0 = buy signal
+         signalGenerated = true;
       }
    }
    // Check for bearish alignment (both trends are bearish/red)
@@ -355,7 +362,14 @@ void CEmaSlopeTrend::CheckTrendAlignment()
          
          // Update last plotted signal type
          m_last_plotted_signal_type = 1;  // 1 = sell signal
+         signalGenerated = true;
       }
+   }
+   
+   // For debugging: If signal changed, print additional info
+   if(signalGenerated && previousSignal != m_last_plotted_signal_type)
+   {
+      Print("Signal changed from ", previousSignal, " to ", m_last_plotted_signal_type);
    }
 }
 

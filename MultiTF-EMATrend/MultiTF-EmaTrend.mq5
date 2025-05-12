@@ -9,6 +9,7 @@
 // Include files
 #include "Indicators/EmaSlopeTrend.mqh"
 #include "Includes/utils.mqh"
+#include "Includes/TradeManager.mqh"
 
 // Input parameters
 input group                "==== EMA Trend Settings ===="
@@ -27,11 +28,19 @@ input color               BuyArrowColor     = clrLime;    // Buy arrow color
 input color               SellArrowColor    = clrRed;     // Sell arrow color
 input int                 ArrowSize         = 1;          // Arrow size
 
+input group                "==== Trading Settings ===="
+input bool                EnableTrading      = true;      // Enable live trading
+input double              LotSize            = 0.01;      // Lot size for trading
+input int                 MagicNumber        = 123456;    // Magic number for trades
+
 // Global variables
 CNewBarDetector newBarDetector;
 
 // EmaSlopeTrend object
 CEmaSlopeTrend emaSlopeTrend;
+
+// Trade manager
+CTradeManager tradeManager;
 
 // Current values
 double emaHigherValue, emaLowerValue;
@@ -55,6 +64,9 @@ int OnInit()
    // Configure arrow settings
    emaSlopeTrend.ConfigureArrows(DrawArrows, BuyArrowColor, SellArrowColor, ArrowSize);
    
+   // Initialize the trade manager
+   tradeManager.Init(MagicNumber, EnableTrading, LotSize);
+   
    // Initialize the bar detector
    newBarDetector.Reset();
    
@@ -74,6 +86,15 @@ void OnDeinit(const int reason)
    Comment("");
    
    Print("MultiTF-EmaTrend deinitialized");
+}
+
+//+------------------------------------------------------------------+
+//| Callback function for EmaSlopeTrend signal                       |
+//+------------------------------------------------------------------+
+void OnEmaTrendSignal(int signalType)
+{
+   // Process trade signal
+   tradeManager.ProcessSignal(signalType);
 }
 
 //+------------------------------------------------------------------+
@@ -102,6 +123,16 @@ void OnTick()
    
    // Check for trend alignment and draw arrows if needed
    emaSlopeTrend.CheckTrendAlignment();
+   
+   // Get the current signal type from EmaSlopeTrend class
+   // Note: We need to update EmaSlopeTrend.mqh to expose this method
+   int signalType = emaSlopeTrend.GetLastSignalType();
+   
+   // Process the signal if there is one
+   if(signalType >= 0)
+   {
+      OnEmaTrendSignal(signalType);
+   }
    
    // Display info on the chart
    if(EnableComments)
