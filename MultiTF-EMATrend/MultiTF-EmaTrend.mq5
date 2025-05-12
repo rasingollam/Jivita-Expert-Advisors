@@ -31,7 +31,13 @@ input int                 ArrowSize         = 1;          // Arrow size
 input group                "==== Trading Settings ===="
 input bool                EnableTrading      = true;      // Enable live trading
 input double              LotSize            = 0.01;      // Lot size for trading
-input int                 MagicNumber        = 123456;    // Magic number for trades
+input int                 MagicNumber        = 953164;    // Magic number for trades
+
+input group                "==== Risk Management ===="
+input bool                UseStopLoss        = true;      // Use ATR-based Stop Loss
+input double              SlAtrMultiplier    = 2.0;       // ATR multiplier for Stop Loss
+input double              RiskRewardRatio    = 1.0;       // Risk-to-Reward ratio for Take Profit
+input int                 RiskAtrPeriod      = 14;        // ATR period for risk calculation
 
 // Global variables
 CNewBarDetector newBarDetector;
@@ -66,6 +72,9 @@ int OnInit()
    
    // Initialize the trade manager
    tradeManager.Init(MagicNumber, EnableTrading, LotSize);
+   
+   // Configure risk management
+   tradeManager.ConfigureRiskManagement(UseStopLoss, SlAtrMultiplier, RiskRewardRatio, RiskAtrPeriod);
    
    // Initialize the bar detector
    newBarDetector.Reset();

@@ -20,6 +20,13 @@ private:
    bool              m_trading_enabled;
    double            m_lot_size;
    
+   // Stop loss and take profit settings
+   bool              m_use_sl;
+   double            m_sl_atr_multiplier;
+   double            m_risk_reward_ratio;
+   int               m_atr_period;
+   int               m_atr_handle;
+   
    // Position tracking
    bool              m_has_position;
    bool              m_is_long;
@@ -27,12 +34,19 @@ private:
    // Get current position info for this EA
    bool              GetPositionInfo();
    
+   // Calculate ATR-based stop loss and take profit
+   double            CalculateStopLoss(bool isBuy, double price);
+   double            CalculateTakeProfit(bool isBuy, double entryPrice, double stopLoss);
+   
 public:
                      CTradeManager();
                      ~CTradeManager();
                      
    // Initialize with parameters                  
    void              Init(int magic, bool enabled, double lots);
+   
+   // Configure stop loss and take profit settings
+   void              ConfigureRiskManagement(bool useSl, double slAtrMulti, double riskReward, int atrPeriod);
    
    // Process trading signals
    void              ProcessSignal(int signalType);
@@ -54,6 +68,12 @@ CTradeManager::CTradeManager()
    m_trading_enabled = true;
    m_lot_size = 0.01;
    
+   m_use_sl = true;
+   m_sl_atr_multiplier = 1.0;
+   m_risk_reward_ratio = 2.0;
+   m_atr_period = 14;
+   m_atr_handle = INVALID_HANDLE;
+   
    m_has_position = false;
    m_is_long = false;
 }
@@ -63,7 +83,8 @@ CTradeManager::CTradeManager()
 //+------------------------------------------------------------------+
 CTradeManager::~CTradeManager()
 {
-   // Nothing to clean up
+   if(m_atr_handle != INVALID_HANDLE)
+      IndicatorRelease(m_atr_handle);
 }
 
 //+------------------------------------------------------------------+
@@ -82,6 +103,32 @@ void CTradeManager::Init(int magic, bool enabled, double lots)
    
    // Check if we already have a position (in case of EA restart)
    GetPositionInfo();
+}
+
+//+------------------------------------------------------------------+
+//| Configure risk management settings                               |
+//+------------------------------------------------------------------+
+void CTradeManager::ConfigureRiskManagement(bool useSl, double slAtrMulti, double riskReward, int atrPeriod)
+{
+   m_use_sl = useSl;
+   m_sl_atr_multiplier = slAtrMulti;
+   m_risk_reward_ratio = riskReward;
+   m_atr_period = atrPeriod;
+   
+   // Create ATR indicator handle if we're using SL/TP
+   if(m_use_sl)
+   {
+      if(m_atr_handle != INVALID_HANDLE)
+         IndicatorRelease(m_atr_handle);
+         
+      m_atr_handle = iATR(Symbol(), PERIOD_CURRENT, m_atr_period);
+      
+      if(m_atr_handle == INVALID_HANDLE)
+      {
+         Print("Failed to create ATR indicator handle for TradeManager");
+         m_use_sl = false; // Disable SL if we can't create the indicator
+      }
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -109,6 +156,75 @@ bool CTradeManager::GetPositionInfo()
    }
    
    return false;
+}
+
+//+------------------------------------------------------------------+
+//| Calculate ATR-based stop loss level                              |
+//+------------------------------------------------------------------+
+double CTradeManager::CalculateStopLoss(bool isBuy, double price)
+{
+   // If SL is disabled or invalid ATR handle, return 0 (no stop loss)
+   if(!m_use_sl || m_atr_handle == INVALID_HANDLE) 
+      return 0.0;
+   
+   // Get ATR value
+   double atrBuffer[];
+   ArraySetAsSeries(atrBuffer, true);
+   
+   if(CopyBuffer(m_atr_handle, 0, 0, 1, atrBuffer) <= 0)
+   {
+      Print("Failed to copy ATR buffer");
+      return 0.0;
+   }
+   
+   double atr = atrBuffer[0];
+   double slDistance = atr * m_sl_atr_multiplier;
+   
+   // Calculate stop loss price
+   double stopLoss = 0.0;
+   
+   if(isBuy)
+   {
+      stopLoss = price - slDistance;
+   }
+   else
+   {
+      stopLoss = price + slDistance;
+   }
+   
+   Print("ATR: ", DoubleToString(atr, 6), ", SL Distance: ", DoubleToString(slDistance, 6));
+   
+   return stopLoss;
+}
+
+//+------------------------------------------------------------------+
+//| Calculate take profit based on risk/reward ratio                 |
+//+------------------------------------------------------------------+
+double CTradeManager::CalculateTakeProfit(bool isBuy, double entryPrice, double stopLoss)
+{
+   // If SL is disabled or stop loss is zero, return 0 (no take profit)
+   if(!m_use_sl || stopLoss == 0.0)
+      return 0.0;
+      
+   double riskDistance = MathAbs(entryPrice - stopLoss);
+   double tpDistance = riskDistance * m_risk_reward_ratio;
+   
+   // Calculate take profit price
+   double takeProfit = 0.0;
+   
+   if(isBuy)
+   {
+      takeProfit = entryPrice + tpDistance;
+   }
+   else
+   {
+      takeProfit = entryPrice - tpDistance;
+   }
+   
+   Print("Risk: ", DoubleToString(riskDistance, 6), ", Reward: ", DoubleToString(tpDistance, 6), 
+         ", R/R Ratio: ", DoubleToString(m_risk_reward_ratio, 2));
+   
+   return takeProfit;
 }
 
 //+------------------------------------------------------------------+
@@ -157,11 +273,23 @@ bool CTradeManager::OpenPosition(bool isBuy)
    // Skip if trading is disabled
    if(!m_trading_enabled) return false;
    
+   double price = isBuy ? SymbolInfoDouble(Symbol(), SYMBOL_ASK) : SymbolInfoDouble(Symbol(), SYMBOL_BID);
+   double stopLoss = CalculateStopLoss(isBuy, price);
+   double takeProfit = CalculateTakeProfit(isBuy, price, stopLoss);
+   
+   // Print SL/TP levels for debugging
+   if(m_use_sl)
+   {
+      Print("Entry: ", DoubleToString(price, 6), 
+            ", SL: ", DoubleToString(stopLoss, 6), 
+            ", TP: ", DoubleToString(takeProfit, 6));
+   }
+   
    bool result = false;
    
    if(isBuy)
    {
-      result = m_trade.Buy(m_lot_size, Symbol(), 0, 0, 0, m_trade_comment);
+      result = m_trade.Buy(m_lot_size, Symbol(), 0, stopLoss, takeProfit, m_trade_comment);
       if(result)
       {
          Print("BUY position opened successfully");
@@ -175,7 +303,7 @@ bool CTradeManager::OpenPosition(bool isBuy)
    }
    else
    {
-      result = m_trade.Sell(m_lot_size, Symbol(), 0, 0, 0, m_trade_comment);
+      result = m_trade.Sell(m_lot_size, Symbol(), 0, stopLoss, takeProfit, m_trade_comment);
       if(result)
       {
          Print("SELL position opened successfully");
