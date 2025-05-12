@@ -13,8 +13,8 @@
 
 // Input parameters
 input group                "==== EMA Trend Settings ===="
-input int                 EmaPeriodHigher   = 50;         // Higher TF EMA Period
-input int                 EmaPeriodLower    = 20;         // Lower TF EMA Period
+input int                 EmaPeriodHigher   = 14;         // Higher TF EMA Period
+input int                 EmaPeriodLower    = 14;         // Lower TF EMA Period
 input ENUM_TIMEFRAMES     HigherTimeframe   = PERIOD_H1;  // Higher Timeframe
 input ENUM_TIMEFRAMES     LowerTimeframe    = PERIOD_M15;  // Lower Timeframe
 input int                 SlopeWindow       = 5;          // Slope Calculation Window
