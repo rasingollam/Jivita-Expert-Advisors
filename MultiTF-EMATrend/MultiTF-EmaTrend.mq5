@@ -30,7 +30,8 @@ input int                 ArrowSize         = 1;          // Arrow size
 
 input group                "==== Trading Settings ===="
 input bool                EnableTrading      = true;      // Enable live trading
-input double              LotSize            = 0.01;      // Lot size for trading
+input double              RiskPercent        = 1.0;       // Risk percentage per trade
+input double              FixedLotSize       = 0.01;      // Fixed lot size (if risk percent is 0)
 input int                 MagicNumber        = 953164;    // Magic number for trades
 
 input group                "==== Risk Management ===="
@@ -73,13 +74,16 @@ int OnInit()
    emaSlopeTrend.ConfigureArrows(DrawArrows, BuyArrowColor, SellArrowColor, ArrowSize);
    
    // Initialize the trade manager
-   tradeManager.Init(MagicNumber, EnableTrading, LotSize);
+   tradeManager.Init(MagicNumber, EnableTrading, FixedLotSize);
    
    // Configure risk management
    tradeManager.ConfigureRiskManagement(UseStopLoss, SlAtrMultiplier, RiskRewardRatio, RiskAtrPeriod);
    
    // Configure trailing stop
    tradeManager.ConfigureTrailingStop(EnableTrailingStop, ShowTrailingStop);
+   
+   // Configure risk-based position sizing
+   tradeManager.ConfigureRiskBasedSize(RiskPercent);
    
    // Initialize the bar detector
    newBarDetector.Reset();

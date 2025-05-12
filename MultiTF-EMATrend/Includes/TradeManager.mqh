@@ -43,12 +43,18 @@ private:
    double            m_current_stop_level;  // Track the current stop level
    datetime          m_last_bar_time;       // Track when we last updated the stop
    
+   // Risk-based position sizing
+   double            m_risk_percent;      // Risk percentage per trade
+   
    // Get current position info for this EA
    bool              GetPositionInfo();
    
    // Calculate ATR-based stop loss and take profit
    double            CalculateStopLoss(bool isBuy, double price);
    double            CalculateTakeProfit(bool isBuy, double entryPrice, double stopLoss);
+   
+   // Calculate lot size based on risk percentage and stop loss
+   double            CalculateLotSize(double entryPrice, double stopLoss);
    
    // Trailing stop visualization methods
    void              UpdateTrailingStopLine();
@@ -69,6 +75,9 @@ public:
    
    // Configure trailing stop settings
    void              ConfigureTrailingStop(bool enableTrailing, bool showVisual);
+   
+   // Configure risk-based position sizing
+   void              ConfigureRiskBasedSize(double riskPercent);
    
    // Previous method now renamed for clarity
    void              ConfigureTrailingStopVisual(bool showLine) { m_show_trailing_stop = showLine; }
@@ -119,6 +128,9 @@ CTradeManager::CTradeManager()
    m_line_end_time = 0;
    m_current_stop_level = 0;
    m_last_bar_time = 0;
+   
+   // Initialize risk-based sizing
+   m_risk_percent = 1.0; // Default 1% risk
 }
 
 //+------------------------------------------------------------------+
@@ -193,6 +205,14 @@ void CTradeManager::ConfigureTrailingStop(bool enableTrailing, bool showVisual)
    {
       RemoveTrailingStopLine();
    }
+}
+
+//+------------------------------------------------------------------+
+//| Configure risk-based position sizing                             |
+//+------------------------------------------------------------------+
+void CTradeManager::ConfigureRiskBasedSize(double riskPercent)
+{
+   m_risk_percent = riskPercent;
 }
 
 //+------------------------------------------------------------------+
@@ -292,6 +312,59 @@ double CTradeManager::CalculateTakeProfit(bool isBuy, double entryPrice, double 
 }
 
 //+------------------------------------------------------------------+
+//| Calculate lot size based on risk percentage                      |
+//+------------------------------------------------------------------+
+double CTradeManager::CalculateLotSize(double entryPrice, double stopLoss)
+{
+   // If risk percent is 0 or negative, use fixed lot size
+   if(m_risk_percent <= 0)
+      return m_lot_size;
+      
+   // Calculate stop distance
+   double stopDistance = MathAbs(entryPrice - stopLoss);
+   
+   // If stop distance is 0 or invalid, use fixed lot size
+   if(stopDistance <= 0)
+      return m_lot_size;
+      
+   // Get symbol info
+   double tickSize = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_SIZE);
+   double tickValue = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_VALUE);
+   double contractSize = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_CONTRACT_SIZE);
+   
+   // Calculate risk amount in account currency
+   double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double riskAmount = accountBalance * (m_risk_percent / 100.0);
+   
+   // Calculate number of ticks in stop distance
+   double ticksInStopDistance = stopDistance / tickSize;
+   
+   // Calculate value of one lot for the stop distance
+   double oneLotRisk = ticksInStopDistance * tickValue;
+   
+   // Calculate required lot size to match risk amount
+   double lotSize = riskAmount / oneLotRisk;
+   
+   // Round to symbol's lot step
+   double lotStep = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_STEP);
+   lotSize = MathFloor(lotSize / lotStep) * lotStep;
+   
+   // Enforce min/max lot size limits
+   double minLot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MIN);
+   double maxLot = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_MAX);
+   
+   lotSize = MathMax(lotSize, minLot);
+   lotSize = MathMin(lotSize, maxLot);
+   
+   Print("Risk calculation - Balance: ", accountBalance, 
+         ", Risk amount: ", riskAmount,
+         ", Stop distance: ", stopDistance,
+         ", Calculated lot size: ", lotSize);
+   
+   return lotSize;
+}
+
+//+------------------------------------------------------------------+
 //| Process trading signal                                           |
 //+------------------------------------------------------------------+
 void CTradeManager::ProcessSignal(int signalType)
@@ -368,6 +441,19 @@ bool CTradeManager::OpenPosition(bool isBuy)
    double stopLoss = CalculateStopLoss(isBuy, price);
    double takeProfit = CalculateTakeProfit(isBuy, price, stopLoss);
    
+   // Calculate position size based on risk percentage if stop loss is used
+   double lotSize = m_lot_size; // Default to fixed size
+   
+   if(m_use_sl && stopLoss != 0 && m_risk_percent > 0)
+   {
+      lotSize = CalculateLotSize(price, stopLoss);
+      Print("Using risk-based position sizing: ", lotSize, " lots");
+   }
+   else
+   {
+      Print("Using fixed position sizing: ", m_lot_size, " lots");
+   }
+   
    // Print SL/TP levels for debugging
    if(m_use_sl)
    {
@@ -380,7 +466,7 @@ bool CTradeManager::OpenPosition(bool isBuy)
    
    if(isBuy)
    {
-      result = m_trade.Buy(m_lot_size, Symbol(), 0, stopLoss, takeProfit, m_trade_comment);
+      result = m_trade.Buy(lotSize, Symbol(), 0, stopLoss, takeProfit, m_trade_comment);
       if(result)
       {
          Print("BUY position opened successfully");
@@ -394,7 +480,7 @@ bool CTradeManager::OpenPosition(bool isBuy)
    }
    else
    {
-      result = m_trade.Sell(m_lot_size, Symbol(), 0, stopLoss, takeProfit, m_trade_comment);
+      result = m_trade.Sell(lotSize, Symbol(), 0, stopLoss, takeProfit, m_trade_comment);
       if(result)
       {
          Print("SELL position opened successfully");
