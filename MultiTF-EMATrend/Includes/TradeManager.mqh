@@ -46,6 +46,14 @@ private:
    // Risk-based position sizing
    double            m_risk_percent;      // Risk percentage per trade
    
+   // Time-based trading filter settings
+   bool              m_enable_time_filter;
+   int               m_trading_start_hour;
+   int               m_trading_start_minute;
+   int               m_trading_end_hour;
+   int               m_trading_end_minute;
+   bool              m_use_server_time;
+   
    // Get current position info for this EA
    bool              GetPositionInfo();
    
@@ -79,11 +87,15 @@ public:
    // Configure risk-based position sizing
    void              ConfigureRiskBasedSize(double riskPercent);
    
+   // Configure time-based trading filter
+   void              ConfigureTimeFilter(bool enableFilter, int startHour, int startMinute, 
+                                       int endHour, int endMinute, bool useServerTime);
+   
    // Previous method now renamed for clarity
    void              ConfigureTrailingStopVisual(bool showLine) { m_show_trailing_stop = showLine; }
    
    // Process trading signals
-   void              ProcessSignal(int signalType);
+   void              ProcessSignal(int signalType, bool allowNewTrades = true);
    
    // Open a new position
    bool              OpenPosition(bool isBuy);
@@ -131,6 +143,14 @@ CTradeManager::CTradeManager()
    
    // Initialize risk-based sizing
    m_risk_percent = 1.0; // Default 1% risk
+   
+   // Initialize time filter settings
+   m_enable_time_filter = false;
+   m_trading_start_hour = 8;
+   m_trading_start_minute = 30;
+   m_trading_end_hour = 16;
+   m_trading_end_minute = 30;
+   m_use_server_time = true;
 }
 
 //+------------------------------------------------------------------+
@@ -213,6 +233,28 @@ void CTradeManager::ConfigureTrailingStop(bool enableTrailing, bool showVisual)
 void CTradeManager::ConfigureRiskBasedSize(double riskPercent)
 {
    m_risk_percent = riskPercent;
+}
+
+//+------------------------------------------------------------------+
+//| Configure time-based trading filter                              |
+//+------------------------------------------------------------------+
+void CTradeManager::ConfigureTimeFilter(bool enableFilter, int startHour, int startMinute, 
+                                      int endHour, int endMinute, bool useServerTime)
+{
+   m_enable_time_filter = enableFilter;
+   m_trading_start_hour = startHour;
+   m_trading_start_minute = startMinute;
+   m_trading_end_hour = endHour;
+   m_trading_end_minute = endMinute;
+   m_use_server_time = useServerTime;
+   
+   Print("Time filter configured: ", 
+        (m_enable_time_filter ? "Enabled" : "Disabled"), 
+        ", Trading hours: ", 
+        (m_trading_start_hour < 10 ? "0" : ""), m_trading_start_hour, ":", 
+        (m_trading_start_minute < 10 ? "0" : ""), m_trading_start_minute, " - ", 
+        (m_trading_end_hour < 10 ? "0" : ""), m_trading_end_hour, ":", 
+        (m_trading_end_minute < 10 ? "0" : ""), m_trading_end_minute);
 }
 
 //+------------------------------------------------------------------+
@@ -367,7 +409,7 @@ double CTradeManager::CalculateLotSize(double entryPrice, double stopLoss)
 //+------------------------------------------------------------------+
 //| Process trading signal                                           |
 //+------------------------------------------------------------------+
-void CTradeManager::ProcessSignal(int signalType)
+void CTradeManager::ProcessSignal(int signalType, bool allowNewTrades)
 {
    // Skip if trading is disabled
    if(!m_trading_enabled) return;
@@ -379,23 +421,14 @@ void CTradeManager::ProcessSignal(int signalType)
       return;
    }
    
-   // Check if we had a position before updating position info
-   bool hadPositionBefore = m_has_position;
-   
    // Check current position status
    GetPositionInfo();
-   
-   // If we had a position before but not anymore, remove the line
-   if(hadPositionBefore && !m_has_position)
-   {
-      Print("Position was closed, removing trailing stop line");
-      RemoveTrailingStopLine();
-   }
    
    // signalType: 0 = buy signal, 1 = sell signal
    bool isBuySignal = (signalType == 0);
    
    // If we have a position, check if we need to close it
+   // Note: Closing positions always allowed, not restricted by time filter
    if(m_has_position)
    {
       // Close long position on sell signal
@@ -418,11 +451,15 @@ void CTradeManager::ProcessSignal(int signalType)
       RemoveTrailingStopLine();
    }
    
-   // Open a new position if we don't have one or closed the opposite one
-   if(!m_has_position)
+   // Open a new position if we don't have one AND we're allowed to place new trades
+   if(!m_has_position && allowNewTrades)
    {
       Print("Opening new position for signal: ", (isBuySignal ? "BUY" : "SELL"));
       OpenPosition(isBuySignal);
+   }
+   else if(!m_has_position && !allowNewTrades && m_enable_time_filter)
+   {
+      Print("Signal detected but outside trading hours - not opening position");
    }
    
    // Update the last processed signal

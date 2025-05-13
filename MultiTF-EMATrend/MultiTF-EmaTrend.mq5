@@ -34,6 +34,16 @@ input double              RiskPercent        = 1.0;       // Risk percentage per
 input double              FixedLotSize       = 0.01;      // Fixed lot size (if risk percent is 0)
 input int                 MagicNumber        = 953164;    // Magic number for trades
 
+input group                "==== Trading Hours ===="
+input bool                EnableTimeFilter   = false;     // Restrict trading to specific hours
+input int                 TradingStartHour   = 8;         // Trading start hour (0-23)
+input int                 TradingStartMinute = 30;        // Trading start minute (0-59)
+input int                 TradingEndHour     = 16;        // Trading end hour (0-23)
+input int                 TradingEndMinute   = 30;        // Trading end minute (0-59)
+input bool                UseServerTime      = true;      // Use server time (true) or local time (false)
+input bool                ShowTimeLines      = true;      // Show vertical time lines on chart
+input color               TimeLinesColor     = clrDarkGray; // Color for time lines
+
 input group                "==== Risk Management ===="
 input bool                UseStopLoss        = true;      // Use ATR-based Stop Loss
 input double              SlAtrMultiplier    = 2.0;       // ATR multiplier for Stop Loss
@@ -50,6 +60,9 @@ CEmaSlopeTrend emaSlopeTrend;
 
 // Trade manager
 CTradeManager tradeManager;
+
+// Time filter
+CTimeFilter timeFilter;
 
 // Current values
 double emaHigherValue, emaLowerValue;
@@ -85,6 +98,15 @@ int OnInit()
    // Configure risk-based position sizing
    tradeManager.ConfigureRiskBasedSize(RiskPercent);
    
+   // Configure time-based trading filter in TradeManager
+   tradeManager.ConfigureTimeFilter(EnableTimeFilter, TradingStartHour, TradingStartMinute, 
+                                  TradingEndHour, TradingEndMinute, UseServerTime);
+   
+   // Configure time filter for visualization
+   timeFilter.Configure(EnableTimeFilter, TradingStartHour, TradingStartMinute,
+                       TradingEndHour, TradingEndMinute, UseServerTime,
+                       ShowTimeLines, TimeLinesColor);
+   
    // Initialize the bar detector
    newBarDetector.Reset();
    
@@ -100,6 +122,9 @@ void OnDeinit(const int reason)
    // Clean up objects created by the EmaSlopeTrend class
    emaSlopeTrend.CleanupObjects();
    
+   // Clean up time lines
+   timeFilter.CleanupTimeLines();
+   
    // Clear chart comments
    Comment("");
    
@@ -111,8 +136,11 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnEmaTrendSignal(int signalType)
 {
-   // Process trade signal
-   tradeManager.ProcessSignal(signalType);
+   // Check if we're within trading hours
+   bool canOpenNewTrades = timeFilter.IsWithinTradingHours();
+   
+   // Process trade signal - pass the flag to allow or disallow new positions
+   tradeManager.ProcessSignal(signalType, canOpenNewTrades);
 }
 
 //+------------------------------------------------------------------+
@@ -120,6 +148,9 @@ void OnEmaTrendSignal(int signalType)
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   // Update time lines (check for day change)
+   timeFilter.UpdateTimeLines();
+   
    // Update the trade manager's position tracking (but not trailing stop)
    tradeManager.OnTick();
    
@@ -191,6 +222,19 @@ void DisplayInfo()
    info += dotInfo;
    info += "\n\nEMA Higher: " + FormatPrice(emaHigherValue);
    info += "\nEMA Lower: " + FormatPrice(emaLowerValue);
+   
+   // Add trading hours information
+   if(EnableTimeFilter)
+   {
+      string timeInfo = "\nTrading Hours: " + 
+                       FormatTimeHHMM(TradingStartHour, TradingStartMinute) + " - " +
+                       FormatTimeHHMM(TradingEndHour, TradingEndMinute);
+      
+      string tradingAllowed = timeFilter.IsWithinTradingHours() ? "Open" : "Closed";
+      timeInfo += " [" + tradingAllowed + "]";
+      
+      info += timeInfo;
+   }
    
    Comment(info);
 }
