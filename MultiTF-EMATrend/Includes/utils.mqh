@@ -171,44 +171,17 @@ bool CTimeFilter::IsWithinTradingHours()
    int startTimeInMinutes = m_trading_start_hour * 60 + m_trading_start_minute;
    int endTimeInMinutes = m_trading_end_hour * 60 + m_trading_end_minute;
    
-   // Debug output with all details
-   static datetime lastDebugTime = 0;
-   if(currentTime - lastDebugTime > 60) // Debug every minute
-   {
-      lastDebugTime = currentTime;
-      bool inTradingHoursSimple = (startTimeInMinutes < endTimeInMinutes) && 
-                                (currentTimeInMinutes >= startTimeInMinutes && currentTimeInMinutes <= endTimeInMinutes);
-                                
-      bool inTradingHoursOvernight = (startTimeInMinutes > endTimeInMinutes) && 
-                                   (currentTimeInMinutes >= startTimeInMinutes || currentTimeInMinutes <= endTimeInMinutes);
-                                   
-      Print("Time check - Current: ", FormatTimeHHMM(currentHour, currentMinute), 
-           ", Start: ", FormatTimeHHMM(m_trading_start_hour, m_trading_start_minute),
-           ", End: ", FormatTimeHHMM(m_trading_end_hour, m_trading_end_minute),
-           ", Current min: ", currentTimeInMinutes,
-           ", Start min: ", startTimeInMinutes,
-           ", End min: ", endTimeInMinutes,
-           ", Is overnight: ", (startTimeInMinutes > endTimeInMinutes ? "Yes" : "No"),
-           ", Simple check: ", (inTradingHoursSimple ? "In hours" : "Outside hours"),
-           ", Overnight check: ", (inTradingHoursOvernight ? "In hours" : "Outside hours"));
-   }
-   
    // Check if current time is within trading hours
-   bool isWithin = false;
-   
    if(startTimeInMinutes < endTimeInMinutes)
    {
       // Simple case: Start time is before end time (same day)
-      isWithin = (currentTimeInMinutes >= startTimeInMinutes && currentTimeInMinutes <= endTimeInMinutes);
+      return (currentTimeInMinutes >= startTimeInMinutes && currentTimeInMinutes <= endTimeInMinutes);
    }
    else
    {
       // Overnight session case (e.g., 20:00 - 04:00)
-      // FIXED: Only true if current time is AFTER start time OR BEFORE end time
-      isWithin = (currentTimeInMinutes >= startTimeInMinutes || currentTimeInMinutes <= endTimeInMinutes);
+      return (currentTimeInMinutes >= startTimeInMinutes || currentTimeInMinutes <= endTimeInMinutes);
    }
-   
-   return isWithin;
 }
 
 //+------------------------------------------------------------------+
@@ -216,19 +189,12 @@ bool CTimeFilter::IsWithinTradingHours()
 //+------------------------------------------------------------------+
 void CTimeFilter::UpdateTimeLines(bool forceRedraw = false)
 {
-   // Debug the entry to this function
-   static int callCount = 0;
-   callCount++;
-   if(callCount % 100 == 0) // Limit debug output frequency
-      Print("UpdateTimeLines called ", callCount, " times, time filter enabled: ", m_enable_time_filter);
-
    // Only draw if enabled
    if(!m_enable_time_filter || !m_show_time_lines)
    {
       // If lines exist but shouldn't be shown, remove them
       if(ObjectFind(0, m_start_time_line) >= 0 || ObjectFind(0, m_end_time_line) >= 0)
       {
-         Print("Time filter disabled or lines hidden - removing any existing lines");
          ObjectDelete(0, m_start_time_line);
          ObjectDelete(0, m_end_time_line);
       }
@@ -249,18 +215,12 @@ void CTimeFilter::UpdateTimeLines(bool forceRedraw = false)
    // Update current day if changed
    if(now.day != m_current_day)
    {
-      Print("Day changed from ", m_current_day, " to ", now.day, " - time lines need redraw");
       m_current_day = now.day;
    }
    
    // Draw or redraw if needed
    if(needsRedraw)
    {
-      Print("Redrawing time lines for day ", now.day, 
-            " - forceRedraw: ", forceRedraw, 
-            ", found start line: ", (ObjectFind(0, m_start_time_line) >= 0),
-            ", found end line: ", (ObjectFind(0, m_end_time_line) >= 0));
-            
       // Delete old lines to avoid any issues
       ObjectDelete(0, m_start_time_line);
       ObjectDelete(0, m_end_time_line);
@@ -297,61 +257,47 @@ void CTimeFilter::UpdateTimeLines(bool forceRedraw = false)
          MqlDateTime nextDayEnd = endTime;
          nextDayEnd.day++; // Move to next day
          endDateTime = StructToTime(nextDayEnd);
-         
-         Print("Overnight session detected: Start=", 
-               TimeToString(startDateTime, TIME_DATE|TIME_MINUTES), 
-               ", End=", TimeToString(endDateTime, TIME_DATE|TIME_MINUTES));
-      }
-      else
-      {
-         Print("Same-day session: Start=", 
-               TimeToString(startDateTime, TIME_DATE|TIME_MINUTES), 
-               ", End=", TimeToString(endDateTime, TIME_DATE|TIME_MINUTES));
       }
       
       // Create start time line
       if(!ObjectCreate(0, m_start_time_line, OBJ_VLINE, 0, startDateTime, 0))
       {
-         Print("Failed to create start time line! Error code: ", GetLastError());
+         Print("Failed to create trading start time line");
+         return;
       }
       
       // Set start time line properties
       ObjectSetInteger(0, m_start_time_line, OBJPROP_COLOR, m_time_lines_color);
       ObjectSetInteger(0, m_start_time_line, OBJPROP_STYLE, STYLE_DASH);
       ObjectSetInteger(0, m_start_time_line, OBJPROP_WIDTH, 1);
-      ObjectSetInteger(0, m_start_time_line, OBJPROP_BACK, false);  // Draw on top
+      ObjectSetInteger(0, m_start_time_line, OBJPROP_BACK, false);
       ObjectSetInteger(0, m_start_time_line, OBJPROP_SELECTABLE, false);
       ObjectSetInteger(0, m_start_time_line, OBJPROP_SELECTED, false);
       ObjectSetInteger(0, m_start_time_line, OBJPROP_HIDDEN, false);
-      ObjectSetInteger(0, m_start_time_line, OBJPROP_ZORDER, 100);  // High Z-order
+      ObjectSetInteger(0, m_start_time_line, OBJPROP_ZORDER, 100);
       ObjectSetString(0, m_start_time_line, OBJPROP_TOOLTIP, "Trading Start: " + 
                      FormatTimeHHMM(m_trading_start_hour, m_trading_start_minute));
       
       // Create end time line
       if(!ObjectCreate(0, m_end_time_line, OBJ_VLINE, 0, endDateTime, 0))
       {
-         Print("Failed to create end time line! Error code: ", GetLastError());
+         Print("Failed to create trading end time line");
+         return;
       }
       
       // Set end time line properties
       ObjectSetInteger(0, m_end_time_line, OBJPROP_COLOR, m_time_lines_color);
       ObjectSetInteger(0, m_end_time_line, OBJPROP_STYLE, STYLE_DASH);
       ObjectSetInteger(0, m_end_time_line, OBJPROP_WIDTH, 1);
-      ObjectSetInteger(0, m_end_time_line, OBJPROP_BACK, false);  // Draw on top
+      ObjectSetInteger(0, m_end_time_line, OBJPROP_BACK, false);
       ObjectSetInteger(0, m_end_time_line, OBJPROP_SELECTABLE, false);
       ObjectSetInteger(0, m_end_time_line, OBJPROP_SELECTED, false);
       ObjectSetInteger(0, m_end_time_line, OBJPROP_HIDDEN, false);
-      ObjectSetInteger(0, m_end_time_line, OBJPROP_ZORDER, 100);  // High Z-order
+      ObjectSetInteger(0, m_end_time_line, OBJPROP_ZORDER, 100);
       ObjectSetString(0, m_end_time_line, OBJPROP_TOOLTIP, "Trading End: " + 
                      FormatTimeHHMM(m_trading_end_hour, m_trading_end_minute));
       
       ChartRedraw(0); // Force chart redraw
-      Print("Trading time lines created for day ", now.day);
-
-      // Add extensive debug output at the end
-      Print("Time lines created: ",
-            "Start line exists: ", (ObjectFind(0, m_start_time_line) >= 0),
-            ", End line exists: ", (ObjectFind(0, m_end_time_line) >= 0));
    }
 }
 
