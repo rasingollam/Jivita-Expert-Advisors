@@ -35,7 +35,7 @@ input double              FixedLotSize       = 0.01;      // Fixed lot size (if 
 input int                 MagicNumber        = 953164;    // Magic number for trades
 
 input group                "==== Trading Hours ===="
-input bool                EnableTimeFilter   = false;     // Restrict trading to specific hours
+input bool                EnableTimeFilter   = true;     // Restrict trading to specific hours
 input int                 TradingStartHour   = 8;         // Trading start hour (0-23)
 input int                 TradingStartMinute = 30;        // Trading start minute (0-59)
 input int                 TradingEndHour     = 16;        // Trading end hour (0-23)
@@ -110,6 +110,28 @@ int OnInit()
    // Initialize the bar detector
    newBarDetector.Reset();
    
+   Print("==== Time Filter Configuration ====");
+   Print("EnableTimeFilter: ", EnableTimeFilter);
+   Print("TradingStartHour: ", TradingStartHour);
+   Print("TradingStartMinute: ", TradingStartMinute);
+   Print("TradingEndHour: ", TradingEndHour);
+   Print("TradingEndMinute: ", TradingEndMinute);
+   Print("UseServerTime: ", UseServerTime);
+   Print("ShowTimeLines: ", ShowTimeLines);
+   
+   // Force time filter to redraw lines on initialization with debugging output
+   Print("Cleaning up any existing time lines...");
+   timeFilter.CleanupTimeLines(); 
+   
+   Print("Configuring time filter...");
+   timeFilter.Configure(EnableTimeFilter, TradingStartHour, TradingStartMinute,
+                       TradingEndHour, TradingEndMinute, UseServerTime,
+                       ShowTimeLines, TimeLinesColor);
+   
+   // Additional check - force a manual update
+   Print("Forcing time line update...");
+   timeFilter.UpdateTimeLines(true);
+   
    Print("MultiTF-EmaTrend initialized successfully");
    return(INIT_SUCCEEDED);
 }
@@ -137,7 +159,31 @@ void OnDeinit(const int reason)
 void OnEmaTrendSignal(int signalType)
 {
    // Check if we're within trading hours
-   bool canOpenNewTrades = timeFilter.IsWithinTradingHours();
+   bool canOpenNewTrades = true;
+   
+   // Only restrict trading if time filter is enabled
+   if(EnableTimeFilter)
+   {
+      canOpenNewTrades = timeFilter.IsWithinTradingHours();
+      
+      // Log detailed information about the trading decision
+      if(!canOpenNewTrades)
+      {
+         Print("SIGNAL REJECTED: Outside trading hours - current time not within ", 
+               FormatTimeHHMM(TradingStartHour, TradingStartMinute), " - ", 
+               FormatTimeHHMM(TradingEndHour, TradingEndMinute));
+      }
+      else
+      {
+         Print("SIGNAL ACCEPTED: Within trading hours - current time is within ", 
+               FormatTimeHHMM(TradingStartHour, TradingStartMinute), " - ", 
+               FormatTimeHHMM(TradingEndHour, TradingEndMinute));
+      }
+   }
+   else
+   {
+      Print("SIGNAL ACCEPTED: Time filtering is disabled");
+   }
    
    // Process trade signal - pass the flag to allow or disallow new positions
    tradeManager.ProcessSignal(signalType, canOpenNewTrades);
@@ -148,8 +194,30 @@ void OnEmaTrendSignal(int signalType)
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   // Update time lines (check for day change)
-   timeFilter.UpdateTimeLines();
+   static datetime lastTimeUpdate = 0;
+   static datetime lastTimeCheck = 0;
+   datetime currentTime = TimeCurrent();
+   
+   // Only update time lines once per minute to reduce overhead
+   if(currentTime - lastTimeUpdate > 60) // Check every minute
+   {
+      lastTimeUpdate = currentTime;
+      
+      // Get current time info for debugging
+      MqlDateTime now;
+      TimeToStruct(currentTime, now);
+      
+      // Debug time filter status occasionally
+      if(now.sec == 0) // Only print once per minute
+      {
+         bool inTradingHours = timeFilter.IsWithinTradingHours();
+         Print("Current time: ", TimeToString(currentTime), 
+               ", Trading hours status: ", (inTradingHours ? "OPEN" : "CLOSED"));
+      }
+      
+      // Update the time lines
+      timeFilter.UpdateTimeLines();
+   }
    
    // Update the trade manager's position tracking (but not trailing stop)
    tradeManager.OnTick();
@@ -189,9 +257,50 @@ void OnTick()
       OnEmaTrendSignal(signalType);
    }
    
-   // Display info on the chart
+   // Display info on the chart - ensure this runs regardless of new bar
    if(EnableComments)
       DisplayInfo();
+   
+   // Debug time filter status occasionally (but more frequent than before)
+   // Check status every 30 seconds
+   if(currentTime - lastTimeCheck > 30)
+   {
+      lastTimeCheck = currentTime;
+      
+      // Only print detailed time information when EnableTimeFilter is true
+      if(EnableTimeFilter)
+      {
+         bool inTradingHours = timeFilter.IsWithinTradingHours();
+         
+         // Convert current time and trading hours to minutes for easy comparison
+         MqlDateTime now;
+         TimeToStruct(currentTime, now);
+         int currentTimeInMinutes = now.hour * 60 + now.min;
+         int startTimeInMinutes = TradingStartHour * 60 + TradingStartMinute;
+         int endTimeInMinutes = TradingEndHour * 60 + TradingEndMinute;
+         
+         Print("Time filter check - Current: ", FormatTimeHHMM(now.hour, now.min), 
+               " (", currentTimeInMinutes, " mins), ",
+               "Trading hours: ", FormatTimeHHMM(TradingStartHour, TradingStartMinute), 
+               "-", FormatTimeHHMM(TradingEndHour, TradingEndMinute),
+               " (", startTimeInMinutes, "-", endTimeInMinutes, " mins), ",
+               "Status: ", (inTradingHours ? "OPEN" : "CLOSED"), 
+               ", Filter enabled: ", EnableTimeFilter);
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| ChartEvent function                                              |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+{
+   // Reload time lines on chart change events
+   if(id == CHARTEVENT_CHART_CHANGE)
+   {
+      Print("Chart changed - updating time filter lines");
+      timeFilter.UpdateTimeLines();
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -235,6 +344,24 @@ void DisplayInfo()
       
       info += timeInfo;
    }
+   
+   // Always add trading hours info for debugging, regardless of EnableTimeFilter
+   string timeInfo = "\nTrading Hours: " + 
+                    FormatTimeHHMM(TradingStartHour, TradingStartMinute) + " - " +
+                    FormatTimeHHMM(TradingEndHour, TradingEndMinute);
+   
+   string tradingAllowed = timeFilter.IsWithinTradingHours() ? "OPEN" : "CLOSED";
+   timeInfo += " [" + tradingAllowed + "]";
+   
+   // Debug time info
+   MqlDateTime now;
+   datetime currentTime = UseServerTime ? TimeCurrent() : TimeLocal();
+   TimeToStruct(currentTime, now);
+   
+   timeInfo += "\nCurrent Time: " + FormatTimeHHMM(now.hour, now.min) + 
+               " (" + (UseServerTime ? "Server" : "Local") + ")";
+   
+   info += timeInfo;
    
    Comment(info);
 }
