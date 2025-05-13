@@ -14,7 +14,7 @@
 // Input parameters
 input group                "==== EMA Trend Settings ===="
 input int                 EmaPeriodHigher   = 14;         // Higher TF EMA Period
-input int                 EmaPeriodLower    = 14;         // Lower TF EMA Period
+input int                 EmaPeriodLower    = 10;         // Lower TF EMA Period
 input ENUM_TIMEFRAMES     HigherTimeframe   = PERIOD_H1;  // Higher Timeframe
 input ENUM_TIMEFRAMES     LowerTimeframe    = PERIOD_M15;  // Lower Timeframe
 input int                 SlopeWindow       = 5;          // Slope Calculation Window
@@ -33,14 +33,25 @@ input bool                EnableTrading      = true;      // Enable live trading
 input double              RiskPercent        = 1.0;       // Risk percentage per trade
 input double              FixedLotSize       = 0.01;      // Fixed lot size (if risk percent is 0)
 input int                 MagicNumber        = 953164;    // Magic number for trades
+input bool                TradeOppositeSignal = false;    // Trade opposite direction of signal
+
+input group                "==== Trading Hours ===="
+input bool                EnableTimeFilter   = false;     // Restrict trading to specific hours
+input int                 TradingStartHour   = 8;         // Trading start hour (0-23)
+input int                 TradingStartMinute = 30;        // Trading start minute (0-59)
+input int                 TradingEndHour     = 16;        // Trading end hour (0-23)
+input int                 TradingEndMinute   = 30;        // Trading end minute (0-59)
+input bool                UseServerTime      = true;      // Use server time (true) or local time (false)
+input bool                ShowTimeLines      = true;      // Show vertical time lines on chart
+input color               TimeLinesColor     = clrDarkGray; // Color for time lines
 
 input group                "==== Risk Management ===="
 input bool                UseStopLoss        = true;      // Use ATR-based Stop Loss
 input double              SlAtrMultiplier    = 2.0;       // ATR multiplier for Stop Loss
 input double              RiskRewardRatio    = 1.0;       // Risk-to-Reward ratio for Take Profit
 input int                 RiskAtrPeriod      = 14;        // ATR period for risk calculation
-input bool                EnableTrailingStop = true;      // Enable trailing stop functionality
-input bool                ShowTrailingStop   = true;      // Show trailing stop trendline
+input bool                EnableTrailingStop = false;      // Enable trailing stop functionality
+input bool                ShowTrailingStop   = false;      // Show trailing stop trendline
 
 // Global variables
 CNewBarDetector newBarDetector;
@@ -50,6 +61,9 @@ CEmaSlopeTrend emaSlopeTrend;
 
 // Trade manager
 CTradeManager tradeManager;
+
+// Time filter
+CTimeFilter timeFilter;
 
 // Current values
 double emaHigherValue, emaLowerValue;
@@ -85,8 +99,21 @@ int OnInit()
    // Configure risk-based position sizing
    tradeManager.ConfigureRiskBasedSize(RiskPercent);
    
+   // Configure time-based trading filter in TradeManager
+   tradeManager.ConfigureTimeFilter(EnableTimeFilter, TradingStartHour, TradingStartMinute, 
+                                  TradingEndHour, TradingEndMinute, UseServerTime);
+   
+   // Configure time filter for visualization
+   timeFilter.Configure(EnableTimeFilter, TradingStartHour, TradingStartMinute,
+                       TradingEndHour, TradingEndMinute, UseServerTime,
+                       ShowTimeLines, TimeLinesColor);
+   
    // Initialize the bar detector
    newBarDetector.Reset();
+   
+   // Force time filter lines creation at startup
+   timeFilter.CleanupTimeLines();
+   timeFilter.UpdateTimeLines(true);
    
    Print("MultiTF-EmaTrend initialized successfully");
    return(INIT_SUCCEEDED);
@@ -100,6 +127,9 @@ void OnDeinit(const int reason)
    // Clean up objects created by the EmaSlopeTrend class
    emaSlopeTrend.CleanupObjects();
    
+   // Clean up time lines
+   timeFilter.CleanupTimeLines();
+   
    // Clear chart comments
    Comment("");
    
@@ -111,8 +141,36 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnEmaTrendSignal(int signalType)
 {
-   // Process trade signal
-   tradeManager.ProcessSignal(signalType);
+   // Check if we're within trading hours
+   bool canOpenNewTrades = true;
+   
+   // Only restrict trading if time filter is enabled
+   if(EnableTimeFilter)
+   {
+      canOpenNewTrades = timeFilter.IsWithinTradingHours();
+      
+      // Only log rejected signals to reduce log spam
+      if(!canOpenNewTrades)
+      {
+         Print("SIGNAL REJECTED: Outside trading hours (", 
+               FormatTimeHHMM(TradingStartHour, TradingStartMinute), "-", 
+               FormatTimeHHMM(TradingEndHour, TradingEndMinute), ")");
+      }
+   }
+   
+   // If trading opposite signals is enabled, invert the signal type
+   int finalSignalType = signalType;
+   if(TradeOppositeSignal && signalType >= 0)
+   {
+      // Invert: 0 = buy becomes 1 = sell, and 1 = sell becomes 0 = buy
+      finalSignalType = (signalType == 0) ? 1 : 0;
+      Print("Trading opposite direction - original signal: ", 
+            (signalType == 0 ? "BUY" : "SELL"), 
+            ", reversed to: ", (finalSignalType == 0 ? "BUY" : "SELL"));
+   }
+   
+   // Process trade signal - pass the flag to allow or disallow new positions
+   tradeManager.ProcessSignal(finalSignalType, canOpenNewTrades);
 }
 
 //+------------------------------------------------------------------+
@@ -120,7 +178,17 @@ void OnEmaTrendSignal(int signalType)
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   // Update the trade manager's position tracking (but not trailing stop)
+   static datetime lastTimeUpdate = 0;
+   datetime currentTime = TimeCurrent();
+   
+   // Only update time lines once per minute to reduce overhead
+   if(currentTime - lastTimeUpdate > 60)
+   {
+      lastTimeUpdate = currentTime;
+      timeFilter.UpdateTimeLines();
+   }
+   
+   // Update the trade manager's position tracking
    tradeManager.OnTick();
    
    // Check for a new bar using our utility
@@ -149,7 +217,6 @@ void OnTick()
    emaSlopeTrend.CheckTrendAlignment();
    
    // Get the current signal type from EmaSlopeTrend class
-   // Note: We need to update EmaSlopeTrend.mqh to expose this method
    int signalType = emaSlopeTrend.GetLastSignalType();
    
    // Process the signal if there is one
@@ -161,6 +228,19 @@ void OnTick()
    // Display info on the chart
    if(EnableComments)
       DisplayInfo();
+}
+
+//+------------------------------------------------------------------+
+//| ChartEvent function                                              |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+{
+   // Reload time lines on chart change events
+   if(id == CHARTEVENT_CHART_CHANGE)
+   {
+      Print("Chart changed - updating time filter lines");
+      timeFilter.UpdateTimeLines();
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -191,6 +271,38 @@ void DisplayInfo()
    info += dotInfo;
    info += "\n\nEMA Higher: " + FormatPrice(emaHigherValue);
    info += "\nEMA Lower: " + FormatPrice(emaLowerValue);
+   
+   // Add trading hours information
+   string timeInfo = "\n\n=== Trading Hours ===";
+   
+   if(EnableTimeFilter)
+   {
+      timeInfo += "\nTrading Hours: " + 
+                 FormatTimeHHMM(TradingStartHour, TradingStartMinute) + " - " +
+                 FormatTimeHHMM(TradingEndHour, TradingEndMinute);
+      
+      bool inTradingHours = timeFilter.IsWithinTradingHours();
+      string tradingAllowed = inTradingHours ? "OPEN" : "CLOSED";
+      timeInfo += " [" + tradingAllowed + "]";
+   }
+   else
+   {
+      timeInfo += "\nTime Filter: DISABLED (trading at all hours)";
+   }
+   
+   // Current time info
+   MqlDateTime now;
+   datetime currentTime = UseServerTime ? TimeCurrent() : TimeLocal();
+   TimeToStruct(currentTime, now);
+   
+   timeInfo += "\nCurrent Time: " + FormatTimeHHMM(now.hour, now.min) + 
+               " (" + (UseServerTime ? "Server" : "Local") + ")";
+   
+   info += timeInfo;
+   
+   // Add signal direction information
+   info += "\n\n=== Trading Settings ===";
+   info += "\nSignal Direction: " + (TradeOppositeSignal ? "OPPOSITE (Counter-Trend)" : "NORMAL (Trend-Following)");
    
    Comment(info);
 }
