@@ -115,8 +115,54 @@ int OnInit()
    timeFilter.CleanupTimeLines();
    timeFilter.UpdateTimeLines(true);
    
+   // Pre-calculate trend state using historical data to avoid waiting for SlopeWindow bars
+   PreCalculateTrendState();
+   
    Print("MultiTF-EmaTrend initialized successfully");
    return(INIT_SUCCEEDED);
+}
+
+//+------------------------------------------------------------------+
+//| Pre-calculate trend state with historical data                   |
+//+------------------------------------------------------------------+
+void PreCalculateTrendState()
+{
+   // Calculate how many bars we need for initializing trend calculations
+   int barsNeeded = MathMax(SlopeWindow * 2, EmaPeriodHigher * 3); // More than enough
+   
+   // Process trend values from historical data
+   for(int i = barsNeeded; i >= 0; i--)
+   {
+      // Use the current time for the historical bar
+      datetime barTime = iTime(Symbol(), PERIOD_CURRENT, i);
+      
+      // Calculate values for this historical bar
+      bool success = emaSlopeTrend.Calculate(i, barTime,
+                               emaHigherValue, emaLowerValue,
+                               colorHigherValue, colorLowerValue,
+                               dotHigherValue, dotLowerValue,
+                               dotHigherColorValue, dotLowerColorValue);
+                               
+      // For the current bar (i=0), check if we have a valid signal
+      if(i == 0 && success)
+      {
+         // Check for trend alignment and draw arrows if needed
+         emaSlopeTrend.CheckTrendAlignment();
+         
+         // Get the current signal type and process it if valid
+         int signalType = emaSlopeTrend.GetLastSignalType();
+         if(signalType >= 0)
+         {
+            Print("Initial trend state calculated - Signal detected: ", 
+                  (signalType == 0 ? "BUY" : "SELL"));
+                  
+            // Don't process the trade right now - wait for first tick
+            // Otherwise we might get an invalid price
+         }
+      }
+   }
+   
+   Print("Historical data processed - EA ready to trade from first tick");
 }
 
 //+------------------------------------------------------------------+
@@ -195,9 +241,8 @@ void OnTick()
    if(!newBarDetector.IsNewBar())
       return;
    
-   // We need at least a few bars to analyze trends
-   if(newBarDetector.GetBarCount() < 5)
-      return;
+   // We can now trade from the first bar since we pre-calculated the trend state
+   // So we'll remove the check for minimum bar count
    
    // Notify trade manager of new bar for trailing stop update
    tradeManager.OnNewBar();
