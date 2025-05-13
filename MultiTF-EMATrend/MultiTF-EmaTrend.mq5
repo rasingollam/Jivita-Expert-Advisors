@@ -14,7 +14,7 @@
 // Input parameters
 input group                "==== EMA Trend Settings ===="
 input int                 EmaPeriodHigher   = 14;         // Higher TF EMA Period
-input int                 EmaPeriodLower    = 14;         // Lower TF EMA Period
+input int                 EmaPeriodLower    = 10;         // Lower TF EMA Period
 input ENUM_TIMEFRAMES     HigherTimeframe   = PERIOD_H1;  // Higher Timeframe
 input ENUM_TIMEFRAMES     LowerTimeframe    = PERIOD_M15;  // Lower Timeframe
 input int                 SlopeWindow       = 5;          // Slope Calculation Window
@@ -50,8 +50,8 @@ input bool                UseStopLoss        = true;      // Use ATR-based Stop 
 input double              SlAtrMultiplier    = 2.0;       // ATR multiplier for Stop Loss
 input double              RiskRewardRatio    = 1.0;       // Risk-to-Reward ratio for Take Profit
 input int                 RiskAtrPeriod      = 14;        // ATR period for risk calculation
-input bool                EnableTrailingStop = true;      // Enable trailing stop functionality
-input bool                ShowTrailingStop   = true;      // Show trailing stop trendline
+input bool                EnableTrailingStop = false;      // Enable trailing stop functionality
+input bool                ShowTrailingStop   = false;      // Show trailing stop trendline
 
 // Global variables
 CNewBarDetector newBarDetector;

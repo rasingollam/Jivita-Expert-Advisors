@@ -12,6 +12,11 @@ The EA uses the slope (rate of change) of EMAs to determine trend direction on t
 - **Sell Signal**: Both higher and lower timeframe EMA slopes are negative (downtrend)
 - **No Signal**: EMA slopes on different timeframes disagree on trend direction
 
+### Trading Modes
+The EA supports two distinct trading modes:
+- **Trend-Following**: Trade in the direction of the detected trend (default)
+- **Counter-Trend**: Trade against the detected trend (reverses signals - buy becomes sell and vice versa)
+
 ### Entry & Exit Rules
 - **Entry**: New position opened when trends align in the same direction
 - **Exit**: Position closed when an opposite signal appears (trends align in opposite direction)
@@ -22,6 +27,8 @@ The EA uses the slope (rate of change) of EMAs to determine trend direction on t
 ## Features
 
 - **Multi-Timeframe Analysis**: Monitors two separate timeframes for stronger confirmation
+- **Flexible Trading Modes**: Choose between trend-following or counter-trend trading approaches
+- **Time-Based Trading Filter**: Restrict trading to specific hours of the day
 - **Dynamic Volatility Adaptation**: ATR-based stop loss adjusts to current market conditions
 - **Risk Management**: 
   - Position sizing based on account risk percentage
@@ -29,6 +36,7 @@ The EA uses the slope (rate of change) of EMAs to determine trend direction on t
   - ATR-based stop loss and trailing stop
 - **Visual Indicators**:
   - Buy/sell arrows at signal points
+  - Trading session time lines on chart
   - Trailing stop trendline visualization
   - Chart comments showing current trend status
 - **Trade Management**: Fully automated entry, exit, and position management
@@ -56,6 +64,17 @@ The EA uses the slope (rate of change) of EMAs to determine trend direction on t
 - **RiskPercent**: Account balance percentage to risk per trade (default: 1.0%)
 - **FixedLotSize**: Lot size when risk percentage is disabled (default: 0.01)
 - **MagicNumber**: Unique identifier for EA's trades (default: 953164)
+- **TradeOppositeSignal**: Trade in the opposite direction of detected signals (default: false)
+
+### Trading Hours
+- **EnableTimeFilter**: Restrict trading to specific hours (default: false)
+- **TradingStartHour**: Hour to start trading (0-23) (default: 8)
+- **TradingStartMinute**: Minute to start trading (0-59) (default: 30)
+- **TradingEndHour**: Hour to stop trading (0-23) (default: 16)
+- **TradingEndMinute**: Minute to stop trading (0-59) (default: 30)
+- **UseServerTime**: Use server time instead of local time (default: true)
+- **ShowTimeLines**: Show vertical time lines on chart (default: true)
+- **TimeLinesColor**: Color for time lines (default: DarkGray)
 
 ### Risk Management
 - **UseStopLoss**: Enable ATR-based stop loss (default: true)
@@ -73,6 +92,19 @@ The EA uses the slope (rate of change) of EMAs to determine trend direction on t
 4. Adjust parameters in the inputs tab
 5. Ensure "Allow automated trading" is enabled in MT5
 
+## Trading Strategies
+
+### Trend Following
+The default mode of operation uses aligned EMA slopes to enter in the direction of the trend:
+- When both timeframe EMAs show rising slopes, buy
+- When both timeframe EMAs show falling slopes, sell
+
+### Counter-Trend Trading
+By enabling `TradeOppositeSignal`, you can employ a counter-trend approach:
+- Buy when the system detects a sell signal (both EMA slopes negative)
+- Sell when the system detects a buy signal (both EMA slopes positive)
+- This mode can be effective in ranging or overbought/oversold markets
+
 ## Performance Optimization
 
 For best results:
@@ -81,13 +113,15 @@ For best results:
 - Use higher timeframes for longer-term trends (H4/D1) and lower for shorter-term confirmation (H1/M30)
 - The EA performs best on trending instruments and major pairs with decent volatility
 - Consider increasing the SlAtrMultiplier in high volatility conditions
+- Test both trend-following and counter-trend modes to see which works best for your specific market
 
 ## Implementation Details
 
 The EA consists of several key components:
 1. **EmaSlopeTrend**: Core indicator class that calculates EMA slopes and determines trend direction
 2. **TradeManager**: Handles all trade entry, exit, and risk management functions
-3. **NewBarDetector**: Ensures the EA only processes new bars to prevent redundant operations
+3. **TimeFilter**: Controls trading hours restrictions and visual time line representation
+4. **NewBarDetector**: Ensures the EA only processes new bars to prevent redundant operations
 
 All signals are analyzed at the completion of a bar, rather than during its formation, for more reliable signals.
 
