@@ -33,9 +33,10 @@ input bool                EnableTrading      = true;      // Enable live trading
 input double              RiskPercent        = 1.0;       // Risk percentage per trade
 input double              FixedLotSize       = 0.01;      // Fixed lot size (if risk percent is 0)
 input int                 MagicNumber        = 953164;    // Magic number for trades
+input bool                TradeOppositeSignal = false;    // Trade opposite direction of signal
 
 input group                "==== Trading Hours ===="
-input bool                EnableTimeFilter   = true;     // Restrict trading to specific hours
+input bool                EnableTimeFilter   = false;     // Restrict trading to specific hours
 input int                 TradingStartHour   = 8;         // Trading start hour (0-23)
 input int                 TradingStartMinute = 30;        // Trading start minute (0-59)
 input int                 TradingEndHour     = 16;        // Trading end hour (0-23)
@@ -157,8 +158,19 @@ void OnEmaTrendSignal(int signalType)
       }
    }
    
+   // If trading opposite signals is enabled, invert the signal type
+   int finalSignalType = signalType;
+   if(TradeOppositeSignal && signalType >= 0)
+   {
+      // Invert: 0 = buy becomes 1 = sell, and 1 = sell becomes 0 = buy
+      finalSignalType = (signalType == 0) ? 1 : 0;
+      Print("Trading opposite direction - original signal: ", 
+            (signalType == 0 ? "BUY" : "SELL"), 
+            ", reversed to: ", (finalSignalType == 0 ? "BUY" : "SELL"));
+   }
+   
    // Process trade signal - pass the flag to allow or disallow new positions
-   tradeManager.ProcessSignal(signalType, canOpenNewTrades);
+   tradeManager.ProcessSignal(finalSignalType, canOpenNewTrades);
 }
 
 //+------------------------------------------------------------------+
@@ -287,6 +299,10 @@ void DisplayInfo()
                " (" + (UseServerTime ? "Server" : "Local") + ")";
    
    info += timeInfo;
+   
+   // Add signal direction information
+   info += "\n\n=== Trading Settings ===";
+   info += "\nSignal Direction: " + (TradeOppositeSignal ? "OPPOSITE (Counter-Trend)" : "NORMAL (Trend-Following)");
    
    Comment(info);
 }
