@@ -65,11 +65,18 @@ CTradeManager tradeManager;
 // Time filter
 CTimeFilter timeFilter;
 
-// Current values
-double emaHigherValue, emaLowerValue;
-int colorHigherValue, colorLowerValue;
-double dotHigherValue, dotLowerValue;
-int dotHigherColorValue, dotLowerColorValue;
+// Profit tracker
+CProfitTracker profitTracker(MagicNumber);
+
+// Variables to hold trend values
+double emaHigherValue = EMPTY_VALUE;
+double emaLowerValue = EMPTY_VALUE;
+int colorHigherValue = 0;
+int colorLowerValue = 0;
+double dotHigherValue = EMPTY_VALUE;
+double dotLowerValue = EMPTY_VALUE;
+int dotHigherColorValue = 0;
+int dotLowerColorValue = 0;
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -117,6 +124,12 @@ int OnInit()
    
    // Pre-calculate trend state using historical data to avoid waiting for SlopeWindow bars
    PreCalculateTrendState();
+   
+   // Initialize the profit tracker
+   if(!profitTracker.Initialize())
+   {
+      Print("Warning: Failed to initialize profit tracker");
+   }
    
    Print("MultiTF-EmaTrend initialized successfully");
    return(INIT_SUCCEEDED);
@@ -309,45 +322,61 @@ void DisplayInfo()
    if(dotLowerValue != EMPTY_VALUE)
       dotInfo += "\nLOWER TIMEFRAME TREND CHANGE DETECTED!";
    
+   string info = "";
+   
    // Assemble and display comment
-   string info = "=== MultiTF-EmaTrend Indicator ===\n";
+   info += "\n\n=== MultiTF-EmaTrend Indicator ===\n";
    info += higherTrendInfo + "\n";
    info += lowerTrendInfo;
    info += dotInfo;
-   info += "\n\nEMA Higher: " + FormatPrice(emaHigherValue);
-   info += "\nEMA Lower: " + FormatPrice(emaLowerValue);
+   // info += "\n\nEMA Higher: " + FormatPrice(emaHigherValue);
+   // info += "\nEMA Lower: " + FormatPrice(emaLowerValue);
    
    // Add trading hours information
-   string timeInfo = "\n\n=== Trading Hours ===";
+   // string timeInfo = "\n\n=== Trading Hours ===";
    
-   if(EnableTimeFilter)
-   {
-      timeInfo += "\nTrading Hours: " + 
-                 FormatTimeHHMM(TradingStartHour, TradingStartMinute) + " - " +
-                 FormatTimeHHMM(TradingEndHour, TradingEndMinute);
+   // if(EnableTimeFilter)
+   // {
+   //    timeInfo += "\nTrading Hours: " + 
+   //               FormatTimeHHMM(TradingStartHour, TradingStartMinute) + " - " +
+   //               FormatTimeHHMM(TradingEndHour, TradingEndMinute);
       
-      bool inTradingHours = timeFilter.IsWithinTradingHours();
-      string tradingAllowed = inTradingHours ? "OPEN" : "CLOSED";
-      timeInfo += " [" + tradingAllowed + "]";
-   }
-   else
-   {
-      timeInfo += "\nTime Filter: DISABLED (trading at all hours)";
-   }
+   //    bool inTradingHours = timeFilter.IsWithinTradingHours();
+   //    string tradingAllowed = inTradingHours ? "OPEN" : "CLOSED";
+   //    timeInfo += " [" + tradingAllowed + "]";
+   // }
+   // else
+   // {
+   //    timeInfo += "\nTime Filter: DISABLED (trading at all hours)";
+   // }
    
    // Current time info
-   MqlDateTime now;
-   datetime currentTime = UseServerTime ? TimeCurrent() : TimeLocal();
-   TimeToStruct(currentTime, now);
+   // MqlDateTime now;
+   // datetime currentTime = UseServerTime ? TimeCurrent() : TimeLocal();
+   // TimeToStruct(currentTime, now);
    
-   timeInfo += "\nCurrent Time: " + FormatTimeHHMM(now.hour, now.min) + 
-               " (" + (UseServerTime ? "Server" : "Local") + ")";
+   // timeInfo += "\nCurrent Time: " + FormatTimeHHMM(now.hour, now.min) + 
+   //             " (" + (UseServerTime ? "Server" : "Local") + ")";
    
-   info += timeInfo;
+   // info += timeInfo;
    
    // Add signal direction information
    info += "\n\n=== Trading Settings ===";
    info += "\nSignal Direction: " + (TradeOppositeSignal ? "OPPOSITE (Counter-Trend)" : "NORMAL (Trend-Following)");
    
+   // Add the profit information section
+   info += profitTracker.GetProfitInfoString();
+   
    Comment(info);
+}
+
+//+------------------------------------------------------------------+
+//| Expert event handler for trade transactions                      |
+//+------------------------------------------------------------------+
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+{
+   // Update profit tracker with the new transaction
+   profitTracker.OnTradeTransaction(trans);
 }
